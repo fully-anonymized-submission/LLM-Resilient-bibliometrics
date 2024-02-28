@@ -1,17 +1,14 @@
 import pandas as pd
-import time
-import matplotlib.pyplot as plt
 import numpy as np
 import spacy
-import networkx as nx
-from wordcloud import WordCloud
 import os
 import pickle
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from scipy.cluster.hierarchy import linkage, fcluster
 import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
 import tqdm
+from collections import Counter
 import itertools
 model = AutoModel.from_pretrained("allenai/scibert_scivocab_uncased")
 tokenizer = AutoTokenizer.from_pretrained("allenai/scibert_scivocab_uncased")
@@ -544,10 +541,36 @@ def compute_cluster_diameter(fair_groups_cs, fair_groups_quant, fair_groups_csqu
     csquant_variances = compute_variances(fair_groups_csquant, verb_embeds, cat_dict=cat_dict, method=method, clustered_by=clustered_by, mixed_groups=True)
     return cs_variances, quant_variances, csquant_variances
 
+def get_counts(path):
+    """ Get the counts of the words in the files in the folder.
+
+        Parameters
+            path (str): the path to the folder with the files
+
+        Returns
+            counter (Counter): a Counter object with the counts of the words
+    """
+    counter = Counter()
+    #iterate over the files in the folder using tqdm
+    for file in tqdm.tqdm(os.listdir(path)):
+        #read the file
+        with open(os.path.join(path, file), 'r', encoding='utf-8') as f:
+            text = f.read()
+            #split the text into words
+            words = text.split()
+            # for every word that appears over 5 times, increment the count
+            unique_words = set(words)
+            for word in unique_words:
+                if words.count(word) > 5:
+                    if word in counter:
+                        counter[word] += 1
+                    else:
+                        counter[word] = 1
+    return counter
+
 
 def main():
     cwd = os.getcwd()
-
 
     ############################ SETTINGS ############################
     THRESHOLD_COUNTS = 5
@@ -556,16 +579,23 @@ def main():
     CLUSTER_BY = 'subj_obj'
 
     PATH_TO_WORKING_FOLDER = cwd + '' # Put here the folder where the triplets are stored, the embeddings and clusters will be stored here as well
+    PATH_TO_FILES_FOR_COUNTS = cwd + '' # Put here the folder with the files for the word counts, these files should be from different categories than the target categories
     #################################################################
 
-
     PATH_TRIPLETS = PATH_TO_WORKING_FOLDER + '\processed_triplets.csv' # place where the triplets are stored
-    PATH_ARXIV_COUNTS = PATH_TO_WORKING_FOLDER + '\word_counts_1000.pkl' # place where the word counts are stored
+    PATH_ARXIV_COUNTS = PATH_TO_WORKING_FOLDER + '\word_counts.pkl' # place where the word counts are stored
     PATH_SUBJ_EMB = PATH_TO_WORKING_FOLDER + '\subjects_embeds.pkl' # place where the object embeddings are stored
     PATH_OBJ_EMB = PATH_TO_WORKING_FOLDER + '\objects_embeds.pkl' # place where the subject embeddings are stored
     PATH_VERB_EMBEDS = PATH_TO_WORKING_FOLDER + '\verbs_embeds.pkl' # place where the verb embeddings are stored
     PATH_SAVE_CLUSTERS = PATH_TO_WORKING_FOLDER + '\clusters.pkl' # place where the clusters are stored
 
+    # check if the counts are already saved
+    if not os.path.exists(PATH_ARXIV_COUNTS):
+        # get the counts
+        counts = get_counts(PATH_TO_FILES_FOR_COUNTS)
+        # save the counts
+        with open(PATH_ARXIV_COUNTS, 'wb') as f:
+            pickle.dump(counts, f)
 
     # Load the triplets
     df = load_triplets(PATH_TRIPLETS)
