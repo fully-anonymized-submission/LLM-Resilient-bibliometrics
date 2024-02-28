@@ -53,3 +53,6 @@ def main():
         print('Triplets are already extracted')
 
     print('Triplets are extarcted and saved in ' + PATH_TRIPLETS + 'triplets.csv')
+
+if __name__ == "__main__":
+    main()

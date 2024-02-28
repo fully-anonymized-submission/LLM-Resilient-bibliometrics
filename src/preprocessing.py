@@ -360,7 +360,6 @@ def main():
     """Convert pdfs to text and process the text"""
     ###################################   SETTINGS  ###################################################
     use_coref_resolution = False # whether to use coreference resolution
-    convert_pdf_to_text = True # whether to convert pdf to text or to use pre-saved text files
 
     # please run from the root directory of the project
     PATH_ROOT = os.getcwd()
@@ -368,7 +367,7 @@ def main():
 
     ####################################### FILL IN THE PATHS ########################################
     PATH_SAVE_TEXT = PATH_ROOT + '' # path to the directory to save the processed text
-    PATH_LOG = PATH_ROOT + '/data/logs/'
+    PATH_LOG = PATH_ROOT + '' # path to the log directory
     ##################################################################################################
 
     # check if folders exist, otherwise create them

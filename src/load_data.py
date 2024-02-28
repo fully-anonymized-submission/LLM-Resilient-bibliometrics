@@ -102,12 +102,8 @@ def keep_categories(PATH_RAW_FILES, PATH_METADATA, categories = ['cs.ET', 'quant
         kept_files (list[str]): list of the kept files
     """
 
-    if os.path.exists(PATH_METADATA + '/arxiv_metadata.json'):
-        # convert json to pickle for faster loading
-        df = pd.read_json(PATH_METADATA + '/arxiv_metadata.json', lines=True)
-        df.to_pickle(PATH_METADATA + '/arxiv_metadata.pickle')
-    else:
-        df = pd.read_pickle(PATH_METADATA + '/arxiv_metadata.pickle')
+    if os.path.exists(PATH_METADATA):
+        df = pd.read_pickle(PATH_METADATA)
     if inverse:
         df_filtered = df[df['categories'].apply(lambda x: all([c not in x.split() for c in categories]))]
     else:
@@ -259,7 +255,6 @@ def main():
     inverse = False # put to true if you want to remove categories instead of keeping them
     subset = None # if you want to process only a subset of the pdfs, put the number here
     filter_categories = True # if you want to filter based on the categories, put to True
-    convert_pdf_to_text = True # whether to convert pdf to text or to use pre-saved text files
     filter_by_version = False # whether to keep only the newest version of each paper
     categories = ['cs.AI', 'cs.CL', 'cs.LG'] # categories to keep (if inverse is False) or to remove (if inverse is True)
 
@@ -268,7 +263,7 @@ def main():
     print('Current working directory: ', PATH_ROOT)
 
     ####################################### FILL IN THE PATHS ########################################
-    PATH_METADATA = PATH_ROOT + '' # path to the metadata
+    PATH_METADATA = PATH_ROOT + '' # path to the metadata, should be a .pickle file
     PATH_RAW_PDF = PATH_ROOT + '' # path to the directory with the raw pdfs
     PATH_SAVE_TEXT = PATH_ROOT + '' # path to the directory to save the processed text
     ##################################################################################################

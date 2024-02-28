@@ -537,6 +537,9 @@ def main():
     ################################## FILL IN THE PATHS ###############################################
     PATH_PROCESSED_TEXT = PATH_ROOT + ''
     PATH_TRIPLETS = PATH_ROOT + ''
+    
+    PATH_TRIPLETS = r'C:\Users\Alexander\OneDrive\EPFL\Armasuisse\LLM-Resilient-bibliometrics\data\triplets'
+    PATH_PROCESSED_TEXT = r'C:\Users\Alexander\OneDrive\EPFL\Armasuisse\LLM-Resilient-bibliometrics\data\processed'
     ####################################################################################################
     
     # if folders for claims and triplets dont exist, make them

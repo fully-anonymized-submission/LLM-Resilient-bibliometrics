@@ -81,7 +81,8 @@ def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
 
     for filename in os.listdir(folder):
         # read in the text
-        with open(folder + filename, 'r', encoding='utf-8') as f:
+        total_path = folder + '/' + filename
+        with open(total_path, 'r', encoding='utf-8') as f:
             text = f.read()
         # classify the sentences
         if text == '':
@@ -108,6 +109,7 @@ def main():
     ################################## FILL IN THE PATHS ###############################################
     PATH_PROCESSED_TEXT = PATH_ROOT + ''
     PATH_CLAIMS = PATH_ROOT + ''
+    PATH_MODEL = PATH_ROOT + "models/claim_model" # claimdistiller model should be here
     ####################################################################################################
     
     # if folders for claims and triplets dont exist, make them
@@ -123,7 +125,6 @@ def main():
     open(PATH_LOG_ERROR_CLAIMS, "w").close()
 
     # Load the claim model
-    PATH_MODEL = PATH_ROOT + "/forecasting/models/claim_model"
     claim_model = tf.keras.models.load_model(PATH_MODEL)
 
     #if there are not yet claims in the folder, extract them
