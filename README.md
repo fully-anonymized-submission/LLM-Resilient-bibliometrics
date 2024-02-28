@@ -34,4 +34,4 @@ The code is designed for the extraction of triplets from arXiv papers. There are
 
 * First define your set of _target papers_, from which you want to extract triplets. Put these papers, together with the metadata in a folder. Now you are ready to load the data with ```load_data.py``` and preprocess the text with ```preprocessing.py```.
 * Now the claims can be extracted with ```claim_extraction.py```, make sure that the claim extraction model is in the correct place. Afterwards, the triplets can be extracted with ```triplet_extraction.py```.
-* Finally, you can cluster the triplets based on the embedding of the subject, object or of both. 
+* Finally, you can cluster the triplets with ```clustering.py``` based on the embedding of the subject, object or of both. 
