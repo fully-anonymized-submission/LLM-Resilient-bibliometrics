@@ -1,16 +1,9 @@
 import regex as re
-import tensorflow as tf
-import torch
-
 import numpy as np
 import nltk
-
 import os
-import spacy
 
 import pandas as pd
-import textacy
-
 import string
 from collections import Counter
 
@@ -23,138 +16,7 @@ from nltk import WordNetLemmatizer
 
 nltk.download('wordnet')
 nltk.download('averaged_perceptron_tagger')
-#download stopwords
-
 nltk.download('stopwords')
-nlp = spacy.load('en_core_web_lg')
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-#print the nvcc version
-print('nvcc version: ', torch.version.cuda)
-print('Device being used: ', device)
-
-
-def get_sentences(text, min_length=5):
-    """ Split the text into sentences and remove sentences under a certain length
-
-    Parameters: 
-        text (str): The text to split into sentences
-        min_length (int): The minimum length of a sentence to keep
-
-    Returns:
-        list[str]: A list of sentences [sentence1, sentence2, ...]
-    """
-    text = text.replace('\n', ' ')
-    sentences = nltk.sent_tokenize(text)
-    sentences = [sentence for sentence in sentences if len(sentence.split()) > min_length]
-    return sentences
-
-def split_char(text):
-  """ Split the text into characters
-
-    Parameters:
-        text (str): The text to split into characters
-
-    Returns:
-        str: A string of characters
-  """
-  return " ".join(list(text))
-
-def preprocess_sentences(sentences):
-    """ Preprocess the sentences to be used as input for the claim model
-
-    Parameters:
-        sentences (list[str]): A list of sentences
-
-    Returns:
-        tuple: A tuple containing two numpy arrays, the first containing the sentences, the second containing the characters of the sentences
-    """
-    chars = [split_char(sentence) for sentence in sentences]
-    # Combine chars and tokens into a numpy array
-    input_data = (np.array(sentences), np.array(chars))
-    return input_data
-
-def classify_sentences(text, claim_model, min_length_sentence=5, threshold=0.5):
-    """ Classify the sentences in the text as claims or not claims
-
-    Parameters:
-        text (str): The text to classify
-        claim_model (tf.keras.Model): The claim model
-        min_length_sentence (int): The minimum length of a sentence to keep
-        threshold (float): The threshold for classifying a sentence as a claim
-
-    Returns:
-        tuple: A tuple containing two numpy arrays, the first containing the predictions, the second containing the sentences
-    """
-
-    sentences = get_sentences(text, min_length_sentence)
-    input_data = preprocess_sentences(sentences)
-    # Get predictions from model
-    preds = claim_model.predict(input_data)
-    # preds have two values, along dimension 1. The first value is the probability of the sentence being a claim, the second is the probability of it not being a claim.
-    # If first value is greater than threshold, classify as claim, else classify as not claim
-    preds = np.where(preds[:, 1] > threshold, 1, 0)
-    
-    return preds, sentences
-
-def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
-    """ Extract the claims from the text in the folder and save them to a file
-
-    Parameters:
-        folder (str): The folder containing the text files
-        save_folder (str): The folder to save the claims to
-        claim_model (tf.keras.Model): The claim model
-        log_errors (str): The file to write errors to
-        threshold (float): The threshold for classifying a sentence as a claim
-    """
-
-    for filename in os.listdir(folder):
-        # read in the text
-        with open(folder + filename, 'r', encoding='utf-8') as f:
-            text = f.read()
-        # classify the sentences
-        if text == '':
-            continue
-        # try to classify the sentences, if it throws an error, write the error to a log file
-        try:
-            preds, sentences = classify_sentences(text, claim_model, threshold=threshold)
-        except Exception as e:
-            with open(log_errors, 'a', encoding='utf-8') as f:
-                f.write('Error in file ' + filename + ': ' + str(e) + '\n')
-            continue
-        save_path = save_folder + filename
-        with open(save_path, 'w', encoding='utf-8') as f:
-            for sentence, pred in zip(sentences, preds):
-                if pred == 1:
-                    f.write(sentence + '\n')
-
-def extract_triplets(folder, save_folder):
-    """ Extract the triplets from the text in the folder and save them to a file
-
-    Parameters:
-        folder (str): The folder containing the text files
-        save_folder (str): The folder to save the triplets to
-    """
-
-    dict = {}
-    for filename in os.listdir(folder):
-        with open(folder + filename, 'r', encoding='utf-8') as f:
-            claim = f.read()
-        doc = nlp(claim)
-        triplets = textacy.extract.subject_verb_object_triples(doc)
-        triplets_list = []
-        for triplet in triplets:
-            subject, verb, object = triplet
-            # subject, verb, object is a list of tokens. Make it a string of tokens
-            subject = ' '.join([token.text for token in subject])
-            verb = ' '.join([token.text for token in verb])
-            object = ' '.join([token.text for token in object])
-            triplets_list.append((subject, verb, object))
-        dict[filename] = triplets_list
-    # make dataframe with 2 columns: paper and triplets. The column triplets should contain a list of all triplets
-    df = pd.DataFrame(list(dict.items()), columns=['paper', 'triplets'])
-    # save the dataframe as a csv file
-    df.to_csv(save_folder + 'triplets.csv', index=False)
 
 def check_pos_tag(triplet, allowed_pos_tags_subject, allowed_pos_tags_object):
     """ Check if the pos tags of the subject and object are in the allowed pos tags
@@ -666,7 +528,6 @@ def filter_with_bookcorpus(triplets, path_book_corpus, path_papers, path_book_fr
 def main():
     ###################################   SETTINGS  ###################################################
     CUTOFF_LENGTH = 6
-    THRESHOLD_CLAIMS = 0.05
     THRESHOLD_BOOKCORPUS = 0.1
     MIN_PAPER_COUNT = 10
 
@@ -675,17 +536,14 @@ def main():
 
     ################################## FILL IN THE PATHS ###############################################
     PATH_PROCESSED_TEXT = PATH_ROOT + ''
-    PATH_CLAIMS = PATH_ROOT + ''
     PATH_TRIPLETS = PATH_ROOT + ''
     ####################################################################################################
     
     # if folders for claims and triplets dont exist, make them
-    if not os.path.exists(PATH_CLAIMS):
-        os.makedirs(PATH_CLAIMS)
     if not os.path.exists(PATH_TRIPLETS):
         os.makedirs(PATH_TRIPLETS)
     
-    PATH_BOOK_CORPUS = PATH_ROOT + "/data/book_corpus_gutenberg.pkl"
+    PATH_BOOK_CORPUS = PATH_ROOT + "/book_corpus_gutenberg.pkl"
     PATH_SAVE_BOOK_FREQ = PATH_TRIPLETS + "word_freq_book.pkl"
     PATH_SAVE_PAPER_FREQ = PATH_TRIPLETS + "word_freq_papers.pkl"
 
@@ -695,7 +553,6 @@ def main():
     PATH_LOG_MAINTAIN_POS = PATH_LOG + 'log_maintainpos'
     PATH_LOG_LEMMATIZE = PATH_LOG + 'log_lemmatize.txt'
     PATH_LOG_KEEPTEXT = PATH_LOG + 'log_keeptext.txt'
-    PATH_LOG_ERROR_CLAIMS = PATH_LOG + 'log_error_claims.txt'
     PATH_LOG_CLEANUP = PATH_LOG + 'log_cleanup.txt'
     PATH_LOG_STOPWORDS = PATH_LOG + 'log_stopwords.txt'
 
@@ -708,30 +565,10 @@ def main():
     open(PATH_LOG_MAINTAIN_POS, 'w').close()
     open(PATH_LOG_LEMMATIZE, "w").close()
     open(PATH_LOG_KEEPTEXT, "w").close()
-    open(PATH_LOG_ERROR_CLAIMS, "w").close()
     open(PATH_LOG_CLEANUP, "w").close()
     open(PATH_LOG_STOPWORDS, "w").close()
 
-    # Load the claim model
-    PATH_MODEL = PATH_ROOT + "/forecasting/models/claim_model"
-    claim_model = tf.keras.models.load_model(PATH_MODEL)
-
-    #if there are not yet claims in the folder, extract them
-    if len(os.listdir(PATH_CLAIMS)) == 0:
-        # write something to the file
-        print('Extracting claims')
-        extract_claims(PATH_PROCESSED_TEXT, PATH_CLAIMS, claim_model=claim_model, log_errors=PATH_LOG_ERROR_CLAIMS, threshold=THRESHOLD_CLAIMS)
-    else:
-        print('Loading claims from ' + PATH_CLAIMS)
-    
-    # check if there is the file PATH_TRIPLETS + 'triplets.csv', if not, extract the triplets
-    if not os.path.exists(PATH_TRIPLETS + 'triplets.csv'):
-        print('Extracting triplets')
-        extract_triplets(PATH_CLAIMS, PATH_TRIPLETS)
-    else:
-        print('Loading triplets from ' + PATH_TRIPLETS + 'triplets.csv')
-
-    # post-processing
+   
     df = pd.read_csv(PATH_TRIPLETS + 'triplets.csv')
     df['triplets'] = df['triplets'].apply(lambda x: eval(x))
     # lower case everything
