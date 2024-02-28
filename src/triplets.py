@@ -664,11 +664,7 @@ def filter_with_bookcorpus(triplets, path_book_corpus, path_papers, path_book_fr
     return filtered_triplets, removed_triplets
 
 def main():
-    # TYPE OF RUN
-    use_sample_papers = False
-    use_cluster = False
-
-    # PARAMETERS
+    ###################################   SETTINGS  ###################################################
     CUTOFF_LENGTH = 6
     THRESHOLD_CLAIMS = 0.05
     THRESHOLD_BOOKCORPUS = 0.1
@@ -677,17 +673,11 @@ def main():
     # PATHS
     PATH_ROOT = os.getcwd()
 
-    if use_sample_papers:
-        PATH_PROCESSED_TEXT = PATH_ROOT + "/data/processed_cited_papers/"
-        PATH_CLAIMS = PATH_ROOT + "/data/claims_cited_papers/"
-        PATH_TRIPLETS = PATH_ROOT + "/data/triplets_cited_papers/"
-    else:
-        if use_cluster:
-            PATH_PROCESSED_TEXT = "/cluster/raid/data/stea/processed_arxiv_cs/"
-        else:
-            PATH_PROCESSED_TEXT = PATH_ROOT + "/data/processed_surveys/"
-        PATH_CLAIMS = PATH_ROOT + "/data/claims_surveys/"
-        PATH_TRIPLETS = PATH_ROOT + "/data/triplets_surveys/"
+    ################################## FILL IN THE PATHS ###############################################
+    PATH_PROCESSED_TEXT = PATH_ROOT + ''
+    PATH_CLAIMS = PATH_ROOT + ''
+    PATH_TRIPLETS = PATH_ROOT + ''
+    ####################################################################################################
     
     # if folders for claims and triplets dont exist, make them
     if not os.path.exists(PATH_CLAIMS):
@@ -695,7 +685,7 @@ def main():
     if not os.path.exists(PATH_TRIPLETS):
         os.makedirs(PATH_TRIPLETS)
     
-    PATH_BOOK_CORPUS = PATH_ROOT + "/data/book_corpus_gutenberg_filtered.pkl"
+    PATH_BOOK_CORPUS = PATH_ROOT + "/data/book_corpus_gutenberg.pkl"
     PATH_SAVE_BOOK_FREQ = PATH_TRIPLETS + "word_freq_book.pkl"
     PATH_SAVE_PAPER_FREQ = PATH_TRIPLETS + "word_freq_papers.pkl"
 

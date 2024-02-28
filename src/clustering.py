@@ -550,16 +550,22 @@ def main():
 
 
     ############################ SETTINGS ############################
-    PATH_TRIPLETS = cwd + '\data\cs_2312_claimthreshold.05\triplets_arxiv\processed_triplets.csv'
-    PATH_ARXIV_COUNTS = cwd + '\data\word_counts_1000.pkl'
-    PATH_SUBJ_EMB = cwd + '\data\cs_2312_claimthreshold.05\clusters_cs2312_filter10\subjects_embeds.pkl'
-    PATH_OBJ_EMB = cwd + '\data\cs_2312_claimthreshold.05\clusters_cs2312_filter10\objects_embeds.pkl'
-    PATH_VERB_EMBEDS = cwd + '\data\cs_2312_claimthreshold.05\clusters_cs2312_filter10\verbs_embeds.pkl'
-    PATH_TO_SAVE_CLUSTERS = cwd + '\data\cs_2312_claimthreshold.05\clusters_cs2312_filter10'
     THRESHOLD_COUNTS = 5
     CLUSTER_THRESHOLD_SUB = 0.05
     CLUSTER_THRESHOLD_OBJ = 0.1
     CLUSTER_BY = 'subj_obj'
+
+    PATH_TO_WORKING_FOLDER = cwd + '' # Put here the folder where the triplets are stored, the embeddings and clusters will be stored here as well
+    #################################################################
+
+
+    PATH_TRIPLETS = PATH_TO_WORKING_FOLDER + '\processed_triplets.csv' # place where the triplets are stored
+    PATH_ARXIV_COUNTS = PATH_TO_WORKING_FOLDER + '\word_counts_1000.pkl' # place where the word counts are stored
+    PATH_SUBJ_EMB = PATH_TO_WORKING_FOLDER + '\subjects_embeds.pkl' # place where the object embeddings are stored
+    PATH_OBJ_EMB = PATH_TO_WORKING_FOLDER + '\objects_embeds.pkl' # place where the subject embeddings are stored
+    PATH_VERB_EMBEDS = PATH_TO_WORKING_FOLDER + '\verbs_embeds.pkl' # place where the verb embeddings are stored
+    PATH_SAVE_CLUSTERS = PATH_TO_WORKING_FOLDER + '\clusters.pkl' # place where the clusters are stored
+
 
     # Load the triplets
     df = load_triplets(PATH_TRIPLETS)
@@ -587,13 +593,15 @@ def main():
 
     # Cluster the triplets based on the setting
     if CLUSTER_BY == 'subj_obj':
-        clustered_triplets_subj_obj = get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects)
+        clustered_triplets = get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects)
     if CLUSTER_BY == 'subj':
-        clustered_triplets_subj = cluster_based_on_subj(triplets, clusters_sub_dict)
+        clustered_triplets= cluster_based_on_subj(triplets, clusters_sub_dict)
     if CLUSTER_BY == 'obj':
-        clustered_triplets_obj = cluster_based_on_obj(triplets, clusters_obj_dict)
+        clustered_triplets = cluster_based_on_obj(triplets, clusters_obj_dict)
 
-
+    # Save the clusters
+    with open(PATH_SAVE_CLUSTERS, 'wb') as f:
+        pickle.dump(clustered_triplets, f)
 
 if __name__ == "__main__":
     main()

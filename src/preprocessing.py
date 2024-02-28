@@ -22,7 +22,7 @@ import spacy
 from spacy.tokens import Doc
 from typing import List
 import random
-
+  
 # Set up devices
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('Device being used: ', device, flush=True)
@@ -623,40 +623,28 @@ def fix_line_breaks(texts, PATH_LOG):
 # ------------------- MAIN -------------------
 
 def main():
-    """Process all the pdf files in the directory and extract the keywords with the different extractors"""
+    """Convert pdfs to text and process the text"""
     ###################################   SETTINGS  ###################################################
     inverse = False # put to true if you want to remove categories instead of keeping them
     subset = None # if you want to process only a subset of the pdfs, put the number here
     filter_categories = True # if you want to filter based on the categories, put to True
 
-    use_sample_papers = False
     use_coref_resolution = False # whether to use coreference resolution
-    use_cluster = False # whether to run on a cluster
     convert_pdf_to_text = True # whether to convert pdf to text or to use pre-saved text files
     filter_by_version = False # whether to keep only the newest version of each paper
     categories = ['cs.AI', 'cs.CL', 'cs.LG'] # categories to keep (if inverse is False) or to remove (if inverse is True)
-    
+
     # please run from the root directory of the project
     PATH_ROOT = os.getcwd()
     print('Current working directory: ', PATH_ROOT)
-    ####################################################################################################
 
-    if use_cluster:
-        PATH_METADATA = '/cluster/raid/data/stea/metadata'
-    else:
-        PATH_METADATA = PATH_ROOT + '/data/metadata'
-    if use_sample_papers:
-        PATH_RAW_PDF = PATH_ROOT + '/data/cited_papers/'
-        PATH_SAVE_TEXT = PATH_ROOT + '/data/processed_cited_papers/'
-    else:
-        if not use_cluster:
-            PATH_RAW_PDF = PATH_ROOT + '/data/arxiv_subsample_1000/'
-            PATH_SAVE_TEXT = PATH_ROOT + '/data/processed_arxiv_subsample_1000_excludecsquant/'
-        else:
-            PATH_RAW_PDF = '/cluster/raid/data/stea/arxiv/2312'
-            PATH_SAVE_TEXT = '/cluster/raid/data/stea/processed_arxiv_cs_coref/'
-        
+    ####################################### FILL IN THE PATHS ########################################
+    PATH_METADATA = PATH_ROOT + '' # path to the metadata
+    PATH_RAW_PDF = PATH_ROOT + '' # path to the directory with the raw pdfs
+    PATH_SAVE_TEXT = PATH_ROOT + '' # path to the directory to save the processed text
     PATH_LOG = PATH_ROOT + '/data/logs/'
+    ##################################################################################################
+
     # check if folders exist, otherwise create them
     if not os.path.exists(PATH_LOG):
         print('Creating log folder...')
@@ -679,24 +667,21 @@ def main():
     start_time_overall = time.time()
     if convert_pdf_to_text:
         # ------------------- KEEP NEWEST PAPER VERSION -------------------
-        if not use_sample_papers:
-            if filter_by_version:
-                print('Keeping newest paper version...', flush=True)
-                keep_newest_versions(PATH_RAW_PDF)
-            # ------------------- KEEP ALLOWED CATEGORIES AND GET PDFS-------------------
-                
-            if filter_categories:
-                print('Getting list of allowed categories...', flush=True)
-                kept_categories = keep_categories(PATH_RAW_PDF, PATH_METADATA, categories, remove_files=False, inverse=inverse)
+        if filter_by_version:
+            print('Keeping newest paper version...', flush=True)
+            keep_newest_versions(PATH_RAW_PDF)
 
-            else:
-                kept_categories = None
-
-            print('Getting pdfs...', flush=True)
-            pdf_list = get_all_pdf_from_dir(PATH_RAW_PDF, kept_categories, subset=subset)
+        # ------------------- KEEP ALLOWED CATEGORIES AND GET PDFS-------------------
+        if filter_categories:
+            print('Getting list of allowed categories...', flush=True)
+            kept_categories = keep_categories(PATH_RAW_PDF, PATH_METADATA, categories, remove_files=False, inverse=inverse)
 
         else:
-            pdf_list = get_all_pdf_from_dir(PATH_RAW_PDF)
+            kept_categories = None
+
+        print('Getting pdfs...', flush=True)
+        pdf_list = get_all_pdf_from_dir(PATH_RAW_PDF, kept_categories, subset=subset)
+
 
         # create a folder to save the processed text
         if not os.path.exists(PATH_SAVE_TEXT):
