@@ -1,7 +1,9 @@
+from helpers import get_logger
 import regex as re
 import numpy as np
 import nltk
-import os
+import logging
+from pathlib import Path
 
 import pandas as pd
 import string
@@ -41,7 +43,7 @@ def check_pos_tag(triplet, allowed_pos_tags_subject, allowed_pos_tags_object):
         return False, 'object'
     return True, None
 
-def filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, object, LOG_PATH, allowed_pos_tags_subject, allowed_pos_tags_object):
+def filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, object, logger, allowed_pos_tags_subject, allowed_pos_tags_object):
     """ Filter the pos tags of the subject and object
 
     Parameters:
@@ -50,7 +52,7 @@ def filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, obj
         subject (str): The subject
         verb (str): The verb
         object (str): The object
-        LOG_PATH (str): The path to the log file
+        logger (logging.Logger): The logger
         allowed_pos_tags_subject (list[str]): A list of allowed pos tags for the subject
         allowed_pos_tags_object (list[str]): A list of allowed pos tags for the object
 
@@ -62,19 +64,17 @@ def filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, obj
     new_subject = ' '.join([word for word, pos_tag in subject_pos_tags if pos_tag in allowed_pos_tags_subject])
     new_object = ' '.join([word for word, pos_tag in object_pos_tags if pos_tag in allowed_pos_tags_object])
     if new_subject != subject:
-        with open(LOG_PATH, 'a', encoding='utf-8') as f:
-            f.write('Old subject: ' + subject + '\n' + 'New subject: ' + new_subject + '\n' + '\n')
+        logger.info('Old subject: ' + subject + '\n' + 'New subject: ' + new_subject + '\n' + '\n')
     if new_object != object:
-        with open(LOG_PATH, 'a', encoding='utf-8') as f:
-            f.write('Old object: ' + object + '\n' + 'New object: ' + new_object + '\n' + '\n')
+        logger.info('Old object: ' + object + '\n' + 'New object: ' + new_object + '\n' + '\n')
     return (new_subject, verb, new_object)
 
-def filter_pos_tag(df, LOG_PATH, allowed_pos_tags_subject=['NN', 'NNS', 'NNP', 'NNPS'], allowed_pos_tags_object=['NN', 'NNS', 'NNP', 'NNPS', 'VBG', 'JJ', 'JJR', 'JJS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']):
+def filter_pos_tag(df, logger, allowed_pos_tags_subject=['NN', 'NNS', 'NNP', 'NNPS'], allowed_pos_tags_object=['NN', 'NNS', 'NNP', 'NNPS', 'VBG', 'JJ', 'JJR', 'JJS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']):
     """ Filter the pos tags of the subject and object
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        LOG_PATH (str): The path to the log file
+        logger (logging.Logger): The logger
         allowed_pos_tags_subject (list[str]): A list of allowed pos tags for the subject
         allowed_pos_tags_object (list[str]): A list of allowed pos tags for the object
 
@@ -82,30 +82,29 @@ def filter_pos_tag(df, LOG_PATH, allowed_pos_tags_subject=['NN', 'NNS', 'NNP', '
         pd.DataFrame: The dataframe containing the filtered triplets
     """
 
-    with open(LOG_PATH, 'w', encoding='utf-8') as f:
-        # write allowed pos tags to the log file
-        f.write('We keep the pos tags in the subject and object that are in the following lists.\n')
-        f.write('Allowed POS tags for the subject: ' + str(allowed_pos_tags_subject) + '\n')
-        f.write('Allowed POS tags for the object: ' + str(allowed_pos_tags_object) + '\n' + '\n')
-        for index, row in df.iterrows():
-            new_triplets = []
-            for triplet in row['triplets']:
-                subject, verb, object = triplet
-                subject_pos_tags = nltk.pos_tag(nltk.word_tokenize(subject))
-                object_pos_tags = nltk.pos_tag(nltk.word_tokenize(object))
-                # if the subject does not have any of the allowed pos tags, remove the triplet
-                if all([pos_tag not in allowed_pos_tags_subject for _, pos_tag in subject_pos_tags]):
-                    # write to the log file
-                    f.write('Removed triplet ' + str(triplet) + ' because the subject does not have any of the allowed POS tags.\n')
-                    continue
-                # if the object does not have any of the allowed pos tags, remove the triplet
-                if all([pos_tag not in allowed_pos_tags_object for _, pos_tag in object_pos_tags]):
-                    # write to the log file
-                    f.write('Removed triplet ' + str(triplet) + ' because the object does not have any of the allowed POS tags.\n')
-                    continue
-                # keep only the pos tags that are in the allowed_pos_tags
-                new_triplets.append(filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, object, LOG_PATH, allowed_pos_tags_subject, allowed_pos_tags_object))
-            df.at[index, 'triplets'] = new_triplets
+    # write allowed pos tags to the log file
+    logger.info('Allowed POS tags for the subject: ' + str(allowed_pos_tags_subject))
+    logger.info('Allowed POS tags for the object: ' + str(allowed_pos_tags_object))
+    logger.info('Filtering the triplets based on the POS tags of the subject and object')
+    for index, row in df.iterrows():
+        new_triplets = []
+        for triplet in row['triplets']:
+            subject, verb, object = triplet
+            subject_pos_tags = nltk.pos_tag(nltk.word_tokenize(subject))
+            object_pos_tags = nltk.pos_tag(nltk.word_tokenize(object))
+            # if the subject does not have any of the allowed pos tags, remove the triplet
+            if all([pos_tag not in allowed_pos_tags_subject for _, pos_tag in subject_pos_tags]):
+                # write to the log file
+                logger.info('Removed triplet ' + str(triplet) + ' because the subject does not have any of the allowed POS tags.')
+                continue
+            # if the object does not have any of the allowed pos tags, remove the triplet
+            if all([pos_tag not in allowed_pos_tags_object for _, pos_tag in object_pos_tags]):
+                # write to the log file
+                logger.info('Removed triplet ' + str(triplet) + ' because the object does not have any of the allowed POS tags.')
+                continue
+            # keep only the pos tags that are in the allowed_pos_tags
+            new_triplets.append(filter_pos_tag_triplet(subject_pos_tags, object_pos_tags, subject, verb, object, logger, allowed_pos_tags_subject, allowed_pos_tags_object))
+        df.at[index, 'triplets'] = new_triplets
     return df
 
 def lower_case(df):
@@ -120,184 +119,179 @@ def lower_case(df):
     df['triplets'] = df['triplets'].apply(lambda x: [(subject.lower(), verb.lower(), object.lower()) for subject, verb, object in x])
     return df
 
-def filter_length(df, PATH_LOG, cutoff_length=10):
+def filter_length(df, logger, cutoff_length=10):
     """ Filter the triplets based on length
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        PATH_LOG (str): The path to the log file
+        logger (logging.Logger): The logger
         cutoff_length (int): The cutoff length
 
     Returns:
         pd.DataFrame: The dataframe containing the filtered triplets
     """
 
-    with open(PATH_LOG, 'w', encoding='utf-8') as f:
-        num_removed = 0
-        for index, row in df.iterrows():
-            new_triplets = []
-            for i in range(len(row['triplets'])):
-                triplet = row['triplets'][i]
-                subject, verb, object = triplet
-                if len(subject.split()) > cutoff_length or len(verb.split()) > cutoff_length or len(object.split()) > cutoff_length:
-                    f.write('Removed triplet ' + str(triplet) + ' because the length of the subject, verb or object exceeds the cutoff length.\n')
-                    num_removed += 1
-                else:
-                    new_triplets.append(triplet)
-            df.at[index, 'triplets'] = new_triplets
-        f.write('Removed ' + str(num_removed) + ' triplets in total.\n')
+    num_removed = 0
+    for index, row in df.iterrows():
+        new_triplets = []
+        for i in range(len(row['triplets'])):
+            triplet = row['triplets'][i]
+            subject, verb, object = triplet
+            if len(subject.split()) > cutoff_length or len(verb.split()) > cutoff_length or len(object.split()) > cutoff_length:
+                logger.info('Removed triplet ' + str(triplet) + ' because the length of the subject, verb or object exceeds the cutoff length.')
+                num_removed += 1
+            else:
+                new_triplets.append(triplet)
+        df.at[index, 'triplets'] = new_triplets
+    logger.info('Removed ' + str(num_removed) + ' triplets in total.')
     return df
 
-def lemmatize(df, PATH_LOG):
+def lemmatize(df, logger):
     """ Lemmatize the triplets
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        PATH_LOG (str): The path to the log file
+        logger (logging.Logger): The logger
 
     Returns:
         pd.DataFrame: The dataframe containing the lemmatized triplets
     """
 
-    with open(PATH_LOG, "a", encoding='utf-8') as f:
-        f.write("Lemmatizing the triplets\n")
-        lemmatizer = WordNetLemmatizer()
-        triplets_lemmatized = []
-        triplets = df['triplets'].values
-        for triplet_list in triplets:
-            new_triplet_list = []
-            for triplet in triplet_list:
-                subject, verb, object = triplet
-                # subject, verbs and objects are lemmatized, note that they may consist of multiple words
-                subject_new = ' '.join([lemmatizer.lemmatize(word) for word in subject.split()])
-                object_new = ' '.join([lemmatizer.lemmatize(word) for word in object.split()])
-                verb_new = ' '.join([lemmatizer.lemmatize(word) for word in verb.split()])
-                # If the subject, verb or object changed, log it
-                if subject_new != subject:
-                    f.write(f"Subject: {subject} -> {subject_new}\n")
-                if object_new != object:
-                    f.write(f"Object: {object} -> {object_new}\n")
-                if verb_new != verb:
-                    f.write(f"Verb: {verb} -> {verb_new}\n")
-                new_triplet_list.append((subject_new, verb_new, object_new))
-            # append the new triplet list
-            triplets_lemmatized.append(new_triplet_list)
+    logger.info('Lemmatizing the triplets')
+    lemmatizer = WordNetLemmatizer()
+    triplets_lemmatized = []
+    triplets = df['triplets'].values
+    for triplet_list in triplets:
+        new_triplet_list = []
+        for triplet in triplet_list:
+            subject, verb, object = triplet
+            # subject, verbs and objects are lemmatized, note that they may consist of multiple words
+            subject_new = ' '.join([lemmatizer.lemmatize(word) for word in subject.split()])
+            object_new = ' '.join([lemmatizer.lemmatize(word) for word in object.split()])
+            verb_new = ' '.join([lemmatizer.lemmatize(word) for word in verb.split()])
+            # If the subject, verb or object changed, log it
+            if subject_new != subject:
+                logger.info(f"Subject: {subject} -> {subject_new}")
+            if object_new != object:
+                logger.info(f"Object: {object} -> {object_new}")
+            if verb_new != verb:
+                logger.info(f"Verb: {verb} -> {verb_new}")
+            new_triplet_list.append((subject_new, verb_new, object_new))
+        # append the new triplet list
+        triplets_lemmatized.append(new_triplet_list)
     # update the dataframe
     df['triplets'] = triplets_lemmatized
     return df
 
-def keep_only_text(df, PATH_LOG):
+def keep_only_text(df, logger):
     """ Keep only the text in the triplets
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        PATH_LOG (str): The path to the log file
+        logger (logging.Logger): The logger
 
     Returns:
         pd.DataFrame: The dataframe containing the triplets with only text
     """
-    with open(PATH_LOG, "a", encoding='utf-8') as f:
-        f.write("Removing punctuation\n")
-        # we want to keep letters, numbers and hyphens, but remove any other character
-        to_keep = string.ascii_letters + string.digits + "-" + " "
-        triplets = df['triplets'].values
-        triplets_no_punctuation = []
-        for triplet_list in triplets:
-            new_triplet_list = []
-            for triplet in triplet_list:
-                subject, verb, object = triplet
-                # keep only the characters that are in to_keep
-                subject_new = ''.join([c for c in subject if c in to_keep])
-                object_new = ''.join([c for c in object if c in to_keep])
-                verb_new = ''.join([c for c in verb if c in to_keep])
-                # if the subject, verb or object changed, log it
-                if subject_new != subject:
-                    f.write(f"Subject: {subject} -> {subject_new}\n")
-                if object_new != object:
-                    f.write(f"Object: {object} -> {object_new}\n")
-                if verb_new != verb:
-                    f.write(f"Verb: {verb} -> {verb_new}\n")
-                new_triplet_list.append((subject_new, verb_new, object_new))
-            # append the new triplet list
-            triplets_no_punctuation.append(new_triplet_list)
+    logger.info('Removing punctuation')
+    # we want to keep letters, numbers and hyphens, but remove any other character
+    to_keep = string.ascii_letters + string.digits + "-" + " "
+    triplets = df['triplets'].values
+    triplets_no_punctuation = []
+    for triplet_list in triplets:
+        new_triplet_list = []
+        for triplet in triplet_list:
+            subject, verb, object = triplet
+            # keep only the characters that are in to_keep
+            subject_new = ''.join([c for c in subject if c in to_keep])
+            object_new = ''.join([c for c in object if c in to_keep])
+            verb_new = ''.join([c for c in verb if c in to_keep])
+            # if the subject, verb or object changed, log it
+            if subject_new != subject:
+                logger.info(f"Subject: {subject} -> {subject_new}")
+            if object_new != object:
+                logger.info(f"Object: {object} -> {object_new}")
+            if verb_new != verb:
+                logger.info(f"Verb: {verb} -> {verb_new}")
+            new_triplet_list.append((subject_new, verb_new, object_new))
+        # append the new triplet list
+        triplets_no_punctuation.append(new_triplet_list)
     # update the dataframe
     df['triplets'] = triplets_no_punctuation
     return df
 
-def remove_stopwords(df, PATH_LOG, redundant_verbs=['can', 'will', 'shall', 'may', 'could', 'would', 'should', 'has', 'are', 'is', 'have', 'was', 'were', 'had', 'do', 'does', 'did', 'am', 'be', 'being', 'been', 'get', 'got', 'gets', 'getting', 'gotten', 'make', 'makes', 'made', 'making', 'let', 'lets', 'letting', 'let']):
+def remove_stopwords(df, logger, redundant_verbs=['can', 'will', 'shall', 'may', 'could', 'would', 'should', 'has', 'are', 'is', 'have', 'was', 'were', 'had', 'do', 'does', 'did', 'am', 'be', 'being', 'been', 'get', 'got', 'gets', 'getting', 'gotten', 'make', 'makes', 'made', 'making', 'let', 'lets', 'letting', 'let']):
     """ Remove the stopwords from the triplets
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        PATH_LOG (str): The path to the log file
+        logger (logging.Logger): The logger
         redundant_verbs (list[str]): A list of redundant verbs
 
     Returns:
         pd.DataFrame: The dataframe containing the triplets with the stopwords removed
     """
 
-    with open(PATH_LOG, "a", encoding='utf-8') as f:
-        f.write("Removing stopwords\n")
-        for idx, row in df.iterrows():
-            triplets_col = row['triplets']
-            new_triplets = []
-            for triplet in triplets_col:
-                subject, verb, object = triplet
-                # if verb has multiple words, remove the redundant ones
-                verbs = verb.split()
-                if len(verbs) > 1:
-                    verbs = [v for v in verbs if v not in redundant_verbs]
-                    verb = ' '.join(verbs)
-                # Remove stopwords from subject, verb and object, if any of them is empty, do not append the triplet
-                new_subject = ' '.join([word for word in subject.split() if word not in stopwords.words('english')])
-                new_object = ' '.join([word for word in object.split() if word not in stopwords.words('english')])
-                if len(new_subject) > 0 and len(new_object) > 0:
-                    new_triplets.append((new_subject, verb, new_object))
-                if new_subject != subject:
-                    f.write(f"Removed stopwords from subject: {subject} -> {new_subject}\n")
-                if new_object != object:
-                    f.write(f"Removed stopwords from object: {object} -> {new_object}\n")
-            df.at[idx, 'triplets'] = new_triplets
+    logger.info('Removing stopwords')
+    for idx, row in df.iterrows():
+        triplets_col = row['triplets']
+        new_triplets = []
+        for triplet in triplets_col:
+            subject, verb, object = triplet
+            # if verb has multiple words, remove the redundant ones
+            verbs = verb.split()
+            if len(verbs) > 1:
+                verbs = [v for v in verbs if v not in redundant_verbs]
+                verb = ' '.join(verbs)
+            # Remove stopwords from subject, verb and object, if any of them is empty, do not append the triplet
+            new_subject = ' '.join([word for word in subject.split() if word not in stopwords.words('english')])
+            new_object = ' '.join([word for word in object.split() if word not in stopwords.words('english')])
+            if len(new_subject) > 0 and len(new_object) > 0:
+                new_triplets.append((new_subject, verb, new_object))
+            if new_subject != subject:
+                logger.info(f"Removed stopwords from subject: {subject} -> {new_subject}")
+            if new_object != object:
+                logger.info(f"Removed stopwords from object: {object} -> {new_object}")
+        df.at[idx, 'triplets'] = new_triplets
     return df
 
-def clean_up_triplets(df, PATH_LOG):
+def clean_up_triplets(df, logger):
     """ Clean up the triplets
 
     Parameters:
         df (pd.DataFrame): The dataframe containing the triplets
-        PATH_LOG (str): The path to the log file
+        logger (logging.Logger): The logger
 
     Returns:
         pd.DataFrame: The dataframe containing the cleaned up triplets
     """
-    with open(PATH_LOG, "a", encoding='utf-8') as f:
-        f.write("Cleaning up the triplets\n")
-        # Remove any row that has no triplets at all
-        df = df[df['triplets'].apply(lambda x: len(x) > 0)]
-        # remove triplets that are empty
-        num_removed = 0
-        for idx, row in df.iterrows():
-            triplets_col = row['triplets']
-            new_triplets = []
-            for triplet in triplets_col:
-                subject, verb, object = triplet
-                subject_words = subject.split()
-                # Remove any part of the subject that has less than 3 characters
-                subject = ' '.join([word for word in subject_words if len(word) > 2])
-                object_words = object.split()
-                # Remove any part of the object that has less than 2 characters
-                object = ' '.join([word for word in object_words if len(word) > 2])
-                # if the subject or object has less than 3 characters, remove the triplet
-                if len(subject) < 3 or len(object) < 3 or len(verb) < 1:
-                    f.write(f"Removed triplet {triplet} because the subject or object has less than 3 characters, or the verb is empty.\n")
-                    num_removed += 1
-                    continue
-                # Replace multiple subsequent spaces with a single space
-                subject = re.sub(' +', ' ', subject)
-                object = re.sub(' +', ' ', object)
-                verb = re.sub(' +', ' ', verb)
-                new_triplets.append((subject, verb, object))
-            df.at[idx, 'triplets'] = new_triplets
+    logger.info('Cleaning up the triplets')
+    # Remove any row that has no triplets at all
+    df = df[df['triplets'].apply(lambda x: len(x) > 0)]
+    # remove triplets that are empty
+    num_removed = 0
+    for idx, row in df.iterrows():
+        triplets_col = row['triplets']
+        new_triplets = []
+        for triplet in triplets_col:
+            subject, verb, object = triplet
+            subject_words = subject.split()
+            # Remove any part of the subject that has less than 3 characters
+            subject = ' '.join([word for word in subject_words if len(word) > 2])
+            object_words = object.split()
+            # Remove any part of the object that has less than 2 characters
+            object = ' '.join([word for word in object_words if len(word) > 2])
+            # if the subject or object has less than 3 characters, remove the triplet
+            if len(subject) < 3 or len(object) < 3 or len(verb) < 1:
+                logger.info(f"Removed triplet {triplet} because the subject or object has less than 3 characters, or the verb is empty.")   
+                num_removed += 1
+                continue
+            # Replace multiple subsequent spaces with a single space
+            subject = re.sub(' +', ' ', subject)
+            object = re.sub(' +', ' ', object)
+            verb = re.sub(' +', ' ', verb)
+            new_triplets.append((subject, verb, object))
+        df.at[idx, 'triplets'] = new_triplets
     return df
 
 def get_words_from_triplets(df):
@@ -370,7 +364,7 @@ def get_frequency_papers(PATH_FOLDER, words, min_terms = 5):
     """ Get the frequency of the words in the papers
 
     Parameters:
-        PATH_FOLDER (str): The folder containing the papers
+        PATH_FOLDER (Path): The folder containing the papers
         words (list[str]): The words
         min_terms (int): The minimum number of terms
 
@@ -378,10 +372,10 @@ def get_frequency_papers(PATH_FOLDER, words, min_terms = 5):
         Counter: A counter containing the frequency of the words
     """
     # get all the files in the folder
-    files = os.listdir(PATH_FOLDER)
+    files = PATH_FOLDER.glob('*.txt')
     word_freq = Counter()
     for file in tqdm.tqdm(files):
-        with open(os.path.join(PATH_FOLDER, file), 'r', encoding='utf-8') as f:
+        with open(PATH_FOLDER.joinpath(file), 'r', encoding='utf-8') as f:
             text = f.read()
             words_paper = text.split()
             # lower case the words
@@ -467,7 +461,7 @@ def filter_triplets(triplets, term_scores, threshold = 0.1):
         filtered_triplets.at[idx, 'triplets'] = kept_triplets
     return filtered_triplets, removed_triplets
 
-def filter_with_bookcorpus(triplets, path_book_corpus, path_papers, path_book_freq, path_paper_freq, max_length_book=30000, threshold=0.1, min_paper_count=10):
+def filter_with_bookcorpus(triplets, logger, path_book_corpus, path_papers, path_book_freq, path_paper_freq, max_length_book=30000, threshold=0.1, min_paper_count=10):
     """ Filter the triplets with the book corpus
 
     Parameters:
@@ -486,11 +480,11 @@ def filter_with_bookcorpus(triplets, path_book_corpus, path_papers, path_book_fr
     """
 
     # Load bookcorpus
-    if os.path.isfile(path_book_corpus):
-        print("Loading book corpus from file")
+    if path_book_corpus.exists():
+        logger.info("Loading book corpus from file")
         book_corpus_gutenberg = pickle.load(open(path_book_corpus, "rb"))
     else:
-        print("Loading book corpus from huggingface")
+        logger.info("Loading book corpus from huggingface")
         book_corpus_gutenberg = load_dataset("sedthh/gutenberg_english")['train']['TEXT']
         book_corpus_gutenberg = filter_book_corpus(book_corpus_gutenberg, max_length_book)
         # save book corpus
@@ -499,28 +493,28 @@ def filter_with_bookcorpus(triplets, path_book_corpus, path_papers, path_book_fr
 
 
     #if it doesn't exist, create it
-    if not os.path.exists(path_book_freq):
-        print("Creating book frequency")
+    if not path_book_freq.exists():
+        logger.info("Creating book frequency")
         word_freq_book = get_corpus_frequency(book_corpus_gutenberg, words_in_triplets, subset=0.3, min_terms=5)
         with open(path_book_freq, 'wb') as f:
             pickle.dump(word_freq_book, f)
     else:
-        print("Loading book frequency")
+        logger.info("Loading book frequency")
         with open(path_book_freq, 'rb') as f:
             word_freq_book = pickle.load(f)
             
-    if not os.path.exists(path_paper_freq):
-        print("Creating paper frequency")
+    if not path_paper_freq.exists():
+        logger.info("Creating paper frequency")
         word_freq_papers = get_frequency_papers(path_papers, words_in_triplets, min_terms=5)
         with open(path_paper_freq, 'wb') as f:
             pickle.dump(word_freq_papers, f)
     else:
-        print("Loading paper frequency")
+        logger.info("Loading paper frequency")
         with open(path_paper_freq, 'rb') as f:
             word_freq_papers = pickle.load(f)
             
     num_docs_corpus = len(book_corpus_gutenberg)
-    num_docs_paper = len(os.listdir(path_papers))
+    num_docs_paper = len(list(path_papers.glob('*.txt')))
     term_scores = compute_term_scores(word_freq_book, word_freq_papers, num_docs_corpus, num_docs_paper, min_paper_count=min_paper_count)
     filtered_triplets, removed_triplets = filter_triplets(triplets, term_scores, threshold=threshold)
     return filtered_triplets, removed_triplets
@@ -532,36 +526,36 @@ def main():
     MIN_PAPER_COUNT = 10
 
     # PATHS
-    PATH_ROOT = os.getcwd()
+    PATH_ROOT = Path.cwd()
 
     ################################## FILL IN THE PATHS ###############################################
-    PATH_PROCESSED_TEXT = PATH_ROOT + ''
-    PATH_TRIPLETS = PATH_ROOT + ''
-    
-    PATH_TRIPLETS = r'C:\Users\Alexander\OneDrive\EPFL\Armasuisse\LLM-Resilient-bibliometrics\data\triplets'
-    PATH_PROCESSED_TEXT = r'C:\Users\Alexander\OneDrive\EPFL\Armasuisse\LLM-Resilient-bibliometrics\data\processed'
+    PATH_PROCESSED_TEXT = PATH_ROOT.joinpath('') # path to the folder with the processed text
+    PATH_TRIPLETS = PATH_ROOT.joinpath('') # path to the folder with the triplets
+    PATH_LOG = PATH_ROOT.joinpath('') # path to the log file
     ####################################################################################################
     
     # if folders for claims and triplets dont exist, make them
-    if not os.path.exists(PATH_TRIPLETS):
-        os.makedirs(PATH_TRIPLETS)
+    if not PATH_TRIPLETS.exists():
+        PATH_TRIPLETS.mkdir()
+
+    if not PATH_LOG.exists():
+        PATH_LOG.mkdir()
     
-    PATH_BOOK_CORPUS = PATH_ROOT + "/book_corpus_gutenberg.pkl"
-    PATH_SAVE_BOOK_FREQ = PATH_TRIPLETS + "word_freq_book.pkl"
-    PATH_SAVE_PAPER_FREQ = PATH_TRIPLETS + "word_freq_papers.pkl"
+    PATH_BOOK_CORPUS = PATH_ROOT.joinpath("/book_corpus_gutenberg.pkl")
+    PATH_SAVE_BOOK_FREQ = PATH_TRIPLETS.joinpath("word_freq_book.pkl")
+    PATH_SAVE_PAPER_FREQ = PATH_TRIPLETS.joinpath("word_freq_papers.pkl")
 
-    PATH_LOG = PATH_ROOT + '/data/logs/'
-    PATH_LOG_FILTER_POS = PATH_LOG + 'log_filterpos'
-    PATH_LOG_LENGTH = PATH_LOG + 'log_length'
-    PATH_LOG_MAINTAIN_POS = PATH_LOG + 'log_maintainpos'
-    PATH_LOG_LEMMATIZE = PATH_LOG + 'log_lemmatize.txt'
-    PATH_LOG_KEEPTEXT = PATH_LOG + 'log_keeptext.txt'
-    PATH_LOG_CLEANUP = PATH_LOG + 'log_cleanup.txt'
-    PATH_LOG_STOPWORDS = PATH_LOG + 'log_stopwords.txt'
-
-    if not os.path.exists(PATH_LOG):
-        os.makedirs(PATH_LOG)
-
+    PATH_LOG_GENERAL_OUTPUT = PATH_LOG.joinpath('general_output_process_triplets.txt')
+    PATH_LOG_FILTER_POS = PATH_LOG.joinpath('log_filterpos.txt')
+    PATH_LOG_LENGTH = PATH_LOG.joinpath('log_length.txt')
+    PATH_LOG_MAINTAIN_POS = PATH_LOG.joinpath('log_maintainpos.txt')
+    PATH_LOG_LEMMATIZE = PATH_LOG.joinpath('log_lemmatize.txt')
+    PATH_LOG_KEEPTEXT = PATH_LOG.joinpath('log_keeptext.txt')
+    PATH_LOG_CLEANUP = PATH_LOG.joinpath('log_cleanup.txt')
+    PATH_LOG_STOPWORDS = PATH_LOG.joinpath('log_stopwords.txt')
+  
+    general_logger = get_logger('general_logger_process_triplets', PATH_LOG_GENERAL_OUTPUT)
+    
     # Clear the log files
     open(PATH_LOG_FILTER_POS, 'w').close()
     open(PATH_LOG_LENGTH, 'w').close()
@@ -577,26 +571,26 @@ def main():
     # lower case everything
     df = lower_case(df)
     # Remove triplets where the length of the subject or object exceeds the cutoff length
-    df = filter_length(df, PATH_LOG_LENGTH, cutoff_length=CUTOFF_LENGTH)
+    df = filter_length(df, get_logger('log_length', PATH_LOG_LENGTH), cutoff_length=CUTOFF_LENGTH)
     # Remove stopwords from the triplets
-    df = remove_stopwords(df, PATH_LOG_STOPWORDS)
+    df = remove_stopwords(df, get_logger('log_stopwords', PATH_LOG_STOPWORDS))
     # Remove any character that is not text, except for hyphens
-    df = keep_only_text(df, PATH_LOG_KEEPTEXT)
+    df = keep_only_text(df, get_logger('log_keeptext', PATH_LOG_KEEPTEXT))
     # Remove triplets that do not have a subject or object with allowed pos tags, possible to specify the allowed pos tags
-    df = filter_pos_tag(df, PATH_LOG_MAINTAIN_POS)
+    df = filter_pos_tag(df, get_logger('log_filterpos', PATH_LOG_FILTER_POS))
     # Lemmatize the triplets
-    df = lemmatize(df, PATH_LOG_LEMMATIZE)
+    df = lemmatize(df, get_logger('log_lemmatize', PATH_LOG_LEMMATIZE))
     # Clean up the triplets, remove triplets that are empty or have a subject or object with less than 3 characters
-    df = clean_up_triplets(df, PATH_LOG_CLEANUP)
+    df = clean_up_triplets(df, get_logger('log_cleanup', PATH_LOG_CLEANUP))
     # Filter the triplets with the book corpus
-    df, removed_triplets = filter_with_bookcorpus(df, PATH_BOOK_CORPUS, PATH_PROCESSED_TEXT, PATH_SAVE_BOOK_FREQ, PATH_SAVE_PAPER_FREQ, threshold=THRESHOLD_BOOKCORPUS, min_paper_count=MIN_PAPER_COUNT)
+    df, removed_triplets = filter_with_bookcorpus(df, general_logger, PATH_BOOK_CORPUS, PATH_PROCESSED_TEXT, PATH_SAVE_BOOK_FREQ, PATH_SAVE_PAPER_FREQ, threshold=THRESHOLD_BOOKCORPUS, min_paper_count=MIN_PAPER_COUNT)
     # Save the triplets
     
     df.to_csv(PATH_TRIPLETS + 'processed_triplets.csv', index=False)
     # save removed triplets
     with open(PATH_TRIPLETS + 'removed_triplets.pkl', 'wb') as f:
         pickle.dump(removed_triplets, f)
-    print('Triplets are processed and saved in ' + PATH_TRIPLETS + 'processed_triplets.csv')
+    general_logger.info('Triplets are processed and saved in ' + PATH_TRIPLETS.joinpath('processed_triplets.csv'))
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,10 @@
+from helpers import get_logger
+
 import nltk
-import os
 import numpy as np
 import tensorflow as tf
+
+from pathlib import Path
 
 def get_sentences(text, min_length=5):
     """ Split the text into sentences and remove sentences under a certain length
@@ -67,7 +70,7 @@ def classify_sentences(text, claim_model, min_length_sentence=5, threshold=0.5):
     
     return preds, sentences
 
-def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
+def extract_claims(folder, save_folder, claim_model, logger, threshold=0.5):
 
     """ Extract the claims from the text in the folder and save them to a file
 
@@ -79,10 +82,8 @@ def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
         threshold (float): The threshold for classifying a sentence as a claim
     """
 
-    for filename in os.listdir(folder):
-        # read in the text
-        total_path = folder + '/' + filename
-        with open(total_path, 'r', encoding='utf-8') as f:
+    for file in folder.rglob('*.txt'):
+        with open(file, 'r', encoding='utf-8') as f:
             text = f.read()
         # classify the sentences
         if text == '':
@@ -91,10 +92,9 @@ def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
         try:
             preds, sentences = classify_sentences(text, claim_model, threshold=threshold)
         except Exception as e:
-            with open(log_errors, 'a', encoding='utf-8') as f:
-                f.write('Error in file ' + filename + ': ' + str(e) + '\n')
-            continue
-        save_path = save_folder + filename
+            message = 'Error in file ' + file + ': ' + str(e) + '\n'
+            logger.info(message)
+        save_path = save_folder.joinpath(file.name)
         with open(save_path, 'w', encoding='utf-8') as f:
             for sentence, pred in zip(sentences, preds):
                 if pred == 1:
@@ -104,40 +104,38 @@ def extract_claims(folder, save_folder, claim_model, log_errors, threshold=0.5):
 def main():
     ###################################   SETTINGS  ###################################################
     THRESHOLD_CLAIMS = 0.05
-    PATH_ROOT = os.getcwd()
+    PATH_ROOT = Path.cwd()
 
     ################################## FILL IN THE PATHS ###############################################
-    PATH_PROCESSED_TEXT = PATH_ROOT + ''
-    PATH_CLAIMS = PATH_ROOT + ''
-    PATH_MODEL = PATH_ROOT + "models/claim_model" # claimdistiller model should be here
+    PATH_PROCESSED_TEXT = PATH_ROOT.joinpath('') # path to the folder with the processed text
+    PATH_CLAIMS = PATH_ROOT.joinpath('') # path to the folder where the claims should be saved
+    PATH_MODEL = PATH_ROOT.joinpath("models/claim_model") # claimdistiller model should be here
+    PATH_LOG = PATH_ROOT.joinpath('') # path to the log file
     ####################################################################################################
-    
     # if folders for claims and triplets dont exist, make them
-    if not os.path.exists(PATH_CLAIMS):
-        os.makedirs(PATH_CLAIMS)
+    if not PATH_CLAIMS.exists():
+        PATH_CLAIMS.mkdir()
 
-    PATH_LOG = PATH_ROOT + '/data/logs/'
-    PATH_LOG_ERROR_CLAIMS = PATH_LOG + 'log_error_claims.txt'
+    if not PATH_LOG.exists():
+        PATH_LOG.mkdir()
 
-    if not os.path.exists(PATH_LOG):
-        os.makedirs(PATH_LOG)
+    general_logger = get_logger('general_logger_extract_claims', PATH_LOG.joinpath('general_output_extract_claims.txt'))
 
-    open(PATH_LOG_ERROR_CLAIMS, "w").close()
+    PATH_LOG_ERROR_CLAIMS = PATH_LOG.joinpath('log_error_claims.txt')
+    error_claim_logger = get_logger('log_error_claims', PATH_LOG_ERROR_CLAIMS)
 
     # Load the claim model
     claim_model = tf.keras.models.load_model(PATH_MODEL)
 
-    #if there are not yet claims in the folder, extract them
-    if len(os.listdir(PATH_CLAIMS)) == 0:
+    #if there are not yet claims in the folder, extract . Use pathlib
+    if len(list(PATH_CLAIMS.glob('*.txt'))) == 0:
         # write something to the file
-        print('Extracting claims')
-        extract_claims(PATH_PROCESSED_TEXT, PATH_CLAIMS, claim_model=claim_model, log_errors=PATH_LOG_ERROR_CLAIMS, threshold=THRESHOLD_CLAIMS)
-        print('Claims are extracted')
+        general_logger.info('Extracting claims')
+        extract_claims(PATH_PROCESSED_TEXT, PATH_CLAIMS, claim_model=claim_model, logger=error_claim_logger, threshold=THRESHOLD_CLAIMS)
+        general_logger.info('Claims are extracted and saved in ' + PATH_CLAIMS)
 
     else:
-        print('Claims are already extracted')
+        general_logger.info('Claims are already extracted')
 
-
-    
 if __name__ == "__main__":
     main()

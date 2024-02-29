@@ -1,14 +1,15 @@
+from helpers import get_logger
+
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 import fitz
 
-import os
 import pandas as pd
 from typing import Union
 
 from pathlib import Path
+import logging
 import random
-
 import nltk
 
 class LanguageDetector:
@@ -55,7 +56,7 @@ def keep_newest_versions(folder_name):
     """Keep only the newest version of each paper, remove the older versions
 
     Parameters:
-        folder_name (str): path to the directory with the pdf files
+        folder_name (Path): path to the directory with the pdf files
 
     Return:
         None
@@ -65,28 +66,27 @@ def keep_newest_versions(folder_name):
     version_dict = {}
 
     # iterate over the files and keep the newest version
-    for subdir, _, files in os.walk(folder_name):
-        for filename in files:
-            num_files += 1
-            filename_reduced = filename.split('v')[0]
-            version = int(filename.split('v')[-1].split('.')[0])
-            # if the filename is in the dictionary, check whether the version is higher
-            if filename_reduced in version_dict:
-                if version > version_dict[filename_reduced]:
-                    version_dict[filename_reduced] = version
-            else:
+    for file in folder_name.rglob('*.pdf'):
+        num_files += 1
+        filename = file.name
+        filename_reduced = filename.split('v')[0]
+        version = int(filename.split('v')[-1].split('.')[0])
+        # if the filename is in the dictionary, check whether the version is higher
+        if filename_reduced in version_dict:
+            if version > version_dict[filename_reduced]:
                 version_dict[filename_reduced] = version
+        else:
+            version_dict[filename_reduced] = version
 
     for filename_reduced, version in version_dict.items():
         files_to_keep.add(filename_reduced + 'v' + str(version) + '.pdf')
     num_files_to_keep = len(files_to_keep)
     print('Percentage of files removed due to being older versions: ', (num_files - num_files_to_keep)/num_files, '%')
     # remove all files that are not in files_to_keep
-    for subdir, _, files in os.walk(folder_name):
-        for filename in files:
-            if filename not in files_to_keep:
-                path_for_removal = os.path.join(subdir, filename)
-                os.remove(path_for_removal)
+    for file in folder_name.rglob('*.pdf'):
+        filename = file.name
+        if filename not in files_to_keep:
+            file.unlink()
 
 def keep_categories(PATH_RAW_FILES, PATH_METADATA, categories = ['cs.ET', 'quant-ph', 'cs.CR','cs.CV', 'physics.pop-ph'], remove_files=False, inverse=False):
     """Keep only the files with the allowed categories
@@ -102,8 +102,8 @@ def keep_categories(PATH_RAW_FILES, PATH_METADATA, categories = ['cs.ET', 'quant
         kept_files (list[str]): list of the kept files
     """
 
-    if os.path.exists(PATH_METADATA):
-        df = pd.read_pickle(PATH_METADATA)
+    # read metadata, it is a json file, it ends in .json
+    df = pd.read_json(PATH_METADATA, lines = True)
     if inverse:
         df_filtered = df[df['categories'].apply(lambda x: all([c not in x.split() for c in categories]))]
     else:
@@ -114,20 +114,19 @@ def keep_categories(PATH_RAW_FILES, PATH_METADATA, categories = ['cs.ET', 'quant
         num_removed = 0
         num_kept = 0
         # Now iterate over the raw files
-        for subdir, dirs, files in os.walk(PATH_RAW_FILES):
-            for filename in files:
-                # remove the suffix .pdf and the version
-                filename_reduced = filename[:-6]
-                if filename_reduced not in kept_files:
-                    path_for_removal = os.path.join(subdir, filename)
-                    os.remove(path_for_removal)
-                    num_removed += 1
-                else:
-                    num_kept += 1
+        for file in PATH_RAW_FILES.rglob('*.pdf'):
+            filename = file.name
+            # remove the suffix .pdf and the version
+            filename_reduced = filename[:-6]
+            if filename_reduced not in kept_files:
+                file.unlink()
+                num_removed += 1
+            else:
+                num_kept += 1
         print('Percentage removed: ', num_removed/(num_removed + num_kept))
     return kept_files
 
-def get_all_pdf_from_dir(path: str, kept_files=None, subset=None) -> list[Path]:
+def get_all_pdf_from_dir(path, kept_files=None, subset = None) -> list[Path]:
     """Get all the pdf files from a directory
 
     Parameters:
@@ -138,17 +137,18 @@ def get_all_pdf_from_dir(path: str, kept_files=None, subset=None) -> list[Path]:
     """
     # also search subdirectories
     pdf_list = []
-    for root, dirs, files in os.walk(path):
-        random_files = random.sample(files, subset) if subset is not None else files
-        for file in random_files:
-            if kept_files is None:
-                if file.endswith(".pdf"):
-                    pdf_list.append(Path(root) / file)
-            else:
-                if file.endswith(".pdf") and file[:-6] in kept_files:
-                    pdf_list.append(Path(root) / file)
-    print('Subset: ', subset, flush=True)
+    # get all the pdf files
+    for file in path.rglob('*.pdf'):
+        if kept_files is None:
+            pdf_list.append(file)
+        else:
+            filename = file.name
+            if filename[:-6] in kept_files:
+                pdf_list.append(file)
 
+    if subset is not None:
+        pdf_list = random.sample(pdf_list, subset)
+    
     return pdf_list
 
 def get_text_from_pdf(path: Union[str, Path]) -> str:
@@ -208,7 +208,7 @@ def process_pdfs(save_folder, pdf_list: list[Path]):
                 sentences = sentences[:i + 1] + sentences[i + 1 + num_replacements:]
                 
         # Save the text in a txt file where each sentence is on a new line
-        with open(os.path.join(save_folder, pdf_name + ".txt"), "w", encoding="utf-8") as f:
+        with open(save_folder.joinpath(pdf_name + '.txt'), "w", encoding="utf-8") as f:
             f.write("\n".join(sentences))
 
         texts.append("\n".join(sentences))
@@ -259,43 +259,46 @@ def main():
     categories = ['cs.AI', 'cs.CL', 'cs.LG'] # categories to keep (if inverse is False) or to remove (if inverse is True)
 
     # please run from the root directory of the project
-    PATH_ROOT = os.getcwd()
+    PATH_ROOT = Path.cwd()
     print('Current working directory: ', PATH_ROOT)
 
     ####################################### FILL IN THE PATHS ########################################
-    PATH_METADATA = PATH_ROOT + '' # path to the metadata, should be a .pickle file
-    PATH_RAW_PDF = PATH_ROOT + '' # path to the directory with the raw pdfs
-    PATH_SAVE_TEXT = PATH_ROOT + '' # path to the directory to save the processed text
+    PATH_METADATA = PATH_ROOT.joinpath('') # path to the metadata, should be a .pickle file
+    PATH_RAW_PDF = PATH_ROOT.joinpath('') # path to the directory with the raw pdfs
+    PATH_SAVE_TEXT = PATH_ROOT.joinpath('') # path to the directory to save the processed text
+    PATH_LOG = PATH_ROOT.joinpath('') # path to the directory to save the logs
     ##################################################################################################
 
-    if not os.path.exists(PATH_SAVE_TEXT):
-        print('Creating folder to save texts... ')
-        os.makedirs(PATH_SAVE_TEXT)
+    if not PATH_LOG.exists():
+        PATH_LOG.mkdir()
+
+    if not PATH_SAVE_TEXT.exists():
+        PATH_SAVE_TEXT.mkdir()
+
+    logger_general_output = get_logger('load_data_output', PATH_LOG.joinpath('general_output_load_data.txt'))
     # ------------------- KEEP NEWEST PAPER VERSION -------------------
     if filter_by_version:
-        print('Keeping newest paper version...', flush=True)
+        logger_general_output.info('Keeping newest paper version...')
         keep_newest_versions(PATH_RAW_PDF)
 
     # ------------------- KEEP ALLOWED CATEGORIES AND GET PDFS-------------------
     if filter_categories:
-        print('Getting list of allowed categories...', flush=True)
+        logger_general_output.info('Keeping only the allowed categories...')
         kept_categories = keep_categories(PATH_RAW_PDF, PATH_METADATA, categories, remove_files=False, inverse=inverse)
 
     else:
         kept_categories = None
 
-    print('Getting pdfs...', flush=True)
+    logger_general_output.info('Getting pdfs...')
     pdf_list = get_all_pdf_from_dir(PATH_RAW_PDF, kept_categories, subset=subset)
 
 
-    # create a folder to save the processed text
-    if not os.path.exists(PATH_SAVE_TEXT):
-        os.makedirs(PATH_SAVE_TEXT)
-
     # ------------------- CONVERT PDF TO TEXT -------------------
-    print('Converting pdfs to text...', flush=True)
+    logger_general_output.info('Converting pdfs to text...')
     # process the pdfs in parallel
     texts = process_pdfs(PATH_SAVE_TEXT, pdf_list)
+
+    logger_general_output.info('Done!')
     
 if __name__ == "__main__":
     main()

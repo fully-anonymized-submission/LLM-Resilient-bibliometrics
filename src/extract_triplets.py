@@ -1,7 +1,12 @@
+from helpers import get_logger
+
 import spacy
 import textacy
 import os
 import pandas as pd
+
+from pathlib import Path
+
 nlp = spacy.load("en_core_web_lg")
 
 def extract_triplets(folder, save_folder):
@@ -34,25 +39,26 @@ def extract_triplets(folder, save_folder):
 
 def main():
     ###################################   SETTINGS  ###################################################
-    PATH_ROOT = os.getcwd()
+    PATH_ROOT = Path.cwd()
 
     ################################## FILL IN THE PATHS ###############################################
-    PATH_CLAIMS = PATH_ROOT + ''
-    PATH_TRIPLETS = PATH_ROOT + ''
+    PATH_CLAIMS = PATH_ROOT.joinpath('')
+    PATH_TRIPLETS = PATH_ROOT.joinpath('')
+    PATH_LOG = PATH_ROOT.joinpath('')
     ####################################################################################################
-    
+    general_logger = get_logger('general_logger_extract_triplets', PATH_LOG.joinpath('general_output_extract_triplets.txt'))
     # if folders for claims and triplets dont exist, make them
-    if not os.path.exists(PATH_TRIPLETS):
-        os.makedirs(PATH_TRIPLETS)
+    if not PATH_TRIPLETS.exists():
+        PATH_TRIPLETS.mkdir()
 
     # check if there is the file PATH_TRIPLETS + 'triplets.csv', if not, extract the triplets
-    if not os.path.exists(PATH_TRIPLETS + 'triplets.csv'):
-        print('Extracting triplets')
+    if not PATH_TRIPLETS.joinpath('triplets.csv').exists():
+        general_logger.info('Extracting triplets')
         extract_triplets(PATH_CLAIMS, PATH_TRIPLETS)
     else:
-        print('Triplets are already extracted')
+        general_logger.info('Triplets already extracted')
 
-    print('Triplets are extarcted and saved in ' + PATH_TRIPLETS + 'triplets.csv')
+    general_logger.info('Triplets are extarcted and saved in ' + PATH_TRIPLETS.joinpath('triplets.csv'))
 
 if __name__ == "__main__":
     main()

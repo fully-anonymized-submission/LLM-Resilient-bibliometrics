@@ -1,20 +1,22 @@
+from helpers import get_logger
 import pandas as pd
 import numpy as np
 import spacy
-import os
+
 import pickle
+from pathlib import Path
 from scipy.cluster.hierarchy import linkage, fcluster
+
 import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
+
 import tqdm
 from collections import Counter
 import itertools
 model = AutoModel.from_pretrained("allenai/scibert_scivocab_uncased")
 tokenizer = AutoTokenizer.from_pretrained("allenai/scibert_scivocab_uncased")
 nlp = spacy.load("en_core_web_lg")
-
-# LOADING AND FILTERING TRIPLETS
 
 def add_paper_id(df):
     """ Add the paper id to the triplets
@@ -113,13 +115,14 @@ def get_triplets_list(df):
             triplets.add(triplet)
     return list(triplets)
 
-def get_subjobjverb_embeds(subjects_all, objects_all, verbs_all):
+def get_subjobjverb_embeds(subjects_all, objects_all, verbs_all, logger):
     """ Get the embeddings for the subjects, objects and verbs
 
         Parameters:
             subjects_all (list): the list of subjects
             objects_all (list): the list of objects 
             verbs_all (list): the list of verbs
+            logger (logging.Logger): the logger
 
         Returns:
             subject_embeds (dict): the dictionary with the subjects and their embeddings
@@ -131,25 +134,25 @@ def get_subjobjverb_embeds(subjects_all, objects_all, verbs_all):
     verb_embeds = {}
     for i, obj in enumerate(objects_all):
         if i % 100 == 0:
-            print(i, ' out of ', len(objects_all))
+            logger.info(i, ' out of ', len(objects_all))
         input_ids = tokenizer.encode(obj, return_tensors='pt')
         outputs = model(input_ids)
         object_embeds[obj] = outputs.pooler_output.detach().numpy()
     for i, sub in enumerate(subjects_all):
         if i % 100 == 0:
-            print(i, ' out of ', len(subjects_all))
+            logger.info(i, ' out of ', len(subjects_all))
         input_ids = tokenizer.encode(sub, return_tensors='pt')
         outputs = model(input_ids)
         subject_embeds[sub] = outputs.pooler_output.detach().numpy()
     for i, verb in enumerate(verbs_all):
         if i % 100 == 0:
-            print(i, ' out of ', len(verbs_all))
+            logger.info(i, ' out of ', len(verbs_all))
         input_ids = tokenizer.encode(verb, return_tensors='pt')
         outputs = model(input_ids)
         verb_embeds[verb] = outputs.pooler_output.detach().numpy()
     return subject_embeds,  verb_embeds, object_embeds
 
-def load_embeds(path_subject_embed, path_object_embed, path_verb_embed, subjects_all, objects_all, verbs_all):
+def load_embeds(path_subject_embed, path_object_embed, path_verb_embed, subjects_all, objects_all, verbs_all, logger):
     """ Load the embeddings for the subjects, objects and verbs
     
         Parameters:
@@ -159,14 +162,16 @@ def load_embeds(path_subject_embed, path_object_embed, path_verb_embed, subjects
             subjects_all (list): the list of subjects
             objects_all (list): the list of objects
             verbs_all (list): the list of verbs
+            logger (logging.Logger): the logger
 
         Returns:    
             subject_embeds (dict): the dictionary with the subjects and their embeddings
             verb_embeds (dict): the dictionary with the verbs and their embeddings
             object_embeds (dict): the dictionary with the objects and their embeddings
     """
-    if not os.path.exists(path_subject_embed) or not os.path.exists(path_object_embed) or not os.path.exists(path_verb_embed):
-        subject_embeds, verb_embeds, object_embeds  = get_subjobjverb_embeds(subjects_all, objects_all, verbs_all)
+    if not path_subject_embed.exists() or not path_object_embed.exists() or not path_verb_embed.exists():
+        logger.info('Embeddings not found, computing them')
+        subject_embeds, verb_embeds, object_embeds  = get_subjobjverb_embeds(subjects_all, objects_all, verbs_all, logger)
         with open(path_subject_embed, 'wb') as f:
             pickle.dump(subject_embeds, f)
         with open(path_object_embed, 'wb') as f:
@@ -175,6 +180,7 @@ def load_embeds(path_subject_embed, path_object_embed, path_verb_embed, subjects
             pickle.dump(verb_embeds, f)
 
     else:
+        logger.info('Embeddings found, loading them')
         with open(path_subject_embed, 'rb') as f:
             subject_embeds = pickle.load(f)
         with open(path_object_embed, 'rb') as f:
@@ -217,12 +223,13 @@ def get_cluster_obj_dict(clusters_obj, objects):
     return clusters_obj_dict
 
 
-def cluster_based_on_subj(triplets, clusters_sub):
+def cluster_based_on_subj(triplets, clusters_sub, logger):
     """ Cluster the triplets based on the subjects
 
         Parameters:
             triplets (list): the list of triplets
             clusters_sub (dict): the dictionary with the subjects and their clusters
+            logger (logging.Logger): the logger
 
         Returns:
             clustered_triplets (dict): the dictionary with the clusters and the triplets
@@ -233,7 +240,7 @@ def cluster_based_on_subj(triplets, clusters_sub):
         try:
             subj_cluster = clusters_sub[subj]
         except:
-            print('Doesnt work for', subj)
+            logger.info('Doesnt work for', subj)
             continue
         subj_cluster = clusters_sub[subj]
         if subj_cluster not in clustered_triplets:
@@ -241,12 +248,13 @@ def cluster_based_on_subj(triplets, clusters_sub):
         clustered_triplets[subj_cluster].append(triplet)
     return clustered_triplets
 
-def cluster_based_on_obj(triplets, clusters_obj):
+def cluster_based_on_obj(triplets, clusters_obj, logger):
     """ Cluster the triplets based on the objects
 
         Parameters:
             triplets (list): the list of triplets
             clusters_obj (dict): the dictionary with the objects and their clusters
+            logger (logging.Logger): the logger
 
         Returns:
             clustered_triplets (dict): the dictionary with the clusters and the triplets
@@ -257,7 +265,7 @@ def cluster_based_on_obj(triplets, clusters_obj):
         try:
             obj_cluster = clusters_obj[obj]
         except:
-            print('Doesnt work for', obj)
+            logger.info('Doesnt work for', obj)
             continue
         if obj_cluster not in clustered_triplets:
             clustered_triplets[obj_cluster] = []
@@ -305,7 +313,7 @@ def make_clusters_scibert(subjects_emb, objects_emb, subset=1):
     return Z_sub, Z_obj, subjects_subset, objects_subset
 
 
-def get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects):
+def get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects, logger):
     """ Get the triplets together that have subjects of the same cluster and objects of the same cluster
 
         Parameters:
@@ -314,6 +322,7 @@ def get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objec
             clusters_obj (np.array): the clusters of the objects
             subjects (list): the list of subjects
             objects (list): the list of objects
+            logger (logging.Logger): the logger
 
         Returns:
             triplets_clustered (dict): the dictionary with the clusters and the triplets
@@ -326,7 +335,7 @@ def get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objec
             index_sub = np.where(subjects == subject)[0][0]
             index_obj = np.where(objects == obj)[0][0]
         except:
-            print('Error with triplet: ', triplet)
+            logger.info('Error with triplet: ', triplet)
             continue
         cluster_sub = clusters_sub[index_sub]
         cluster_obj = clusters_obj[index_obj]
@@ -335,7 +344,7 @@ def get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objec
         triplets_clustered[(cluster_sub, cluster_obj)].append(triplet)
     return triplets_clustered
 
-def get_fair_groups(triplets_clustered, cat_dict, one_triplet_per_paper=True, balanced_mixed_groups=True):
+def get_fair_groups(triplets_clustered, cat_dict, one_triplet_per_paper=True):
     """ Get the fair groups of triplets
 
         Parameters:
@@ -349,7 +358,6 @@ def get_fair_groups(triplets_clustered, cat_dict, one_triplet_per_paper=True, ba
             groups_quant (dict): the dictionary with the number of triplets and the groups of triplets that are quantum
             groups_csquant (dict): the dictionary with the number of triplets and the groups of triplets that are mixed
     """
-    print('Getting fair groups')
     groups_cs = {}
     groups_quant = {}
     groups_csquant = {}
@@ -415,17 +423,15 @@ def get_category_dictionary(path_cs, path_quant):
 
     cat_dict = {}
     # the titles in path_cs get value 'cs'
-    for _, _, files in os.walk(path_cs):
-        for file in files:
-            #change the .pdf to .txt
-            title = file[:-4] + '.txt'
-            cat_dict[title] = 'cs'
+    for file in path_cs.rglob('*.pdf'):
+        #change the .pdf to .txt
+        title = file[:-4] + '.txt'
+        cat_dict[title] = 'cs'
     # the titles in path_quant get value 'quant'
-    for root, dirs, files in os.walk(path_quant):
-        for file in files:
-            #change the .pdf to .txt
-            title = file[:-4] + '.txt'
-            cat_dict[title] = 'quant'
+    for file in path_quant.rglob('*.pdf'):
+        #change the .pdf to .txt
+        title = file[:-4] + '.txt'
+        cat_dict[title] = 'quant'
     return cat_dict
 
 def compute_variances(fair_group, embeds, cat_dict, clustered_by='subj_obj', method='mean', mixed_groups=False):
@@ -442,8 +448,6 @@ def compute_variances(fair_group, embeds, cat_dict, clustered_by='subj_obj', met
         Returns:
             distances (dict): the dictionary with the variances
     """
-
-    print('Computing variances')
     distances = {}
     for size, groups in tqdm.tqdm(fair_group.items()):
         for group in groups:
@@ -533,11 +537,8 @@ def compute_cluster_diameter(fair_groups_cs, fair_groups_quant, fair_groups_csqu
             quant_diameter (dict): the dictionary with the quantum cluster diameters
             csquant_diameter (dict): the dictionary with the mixed cluster diameters
     """
-    print('Computing variances for CS groups')
     cs_variances = compute_variances(fair_groups_cs, verb_embeds, cat_dict=cat_dict, method=method, clustered_by=clustered_by)
-    print('Computing variances for Quantum groups')
     quant_variances = compute_variances(fair_groups_quant, verb_embeds, cat_dict=cat_dict, method=method, clustered_by=clustered_by)
-    print('Computing variances for CS and Quantum groups')
     csquant_variances = compute_variances(fair_groups_csquant, verb_embeds, cat_dict=cat_dict, method=method, clustered_by=clustered_by, mixed_groups=True)
     return cs_variances, quant_variances, csquant_variances
 
@@ -552,9 +553,9 @@ def get_counts(path):
     """
     counter = Counter()
     #iterate over the files in the folder using tqdm
-    for file in tqdm.tqdm(os.listdir(path)):
+    for file in path.rglob('*.txt'):
         #read the file
-        with open(os.path.join(path, file), 'r', encoding='utf-8') as f:
+        with open(path.joinpath(file), 'r', encoding='utf-8') as f:
             text = f.read()
             #split the text into words
             words = text.split()
@@ -570,7 +571,7 @@ def get_counts(path):
 
 
 def main():
-    cwd = os.getcwd()
+    cwd = Path.cwd()
 
     ############################ SETTINGS ############################
     THRESHOLD_COUNTS = 5
@@ -578,19 +579,22 @@ def main():
     CLUSTER_THRESHOLD_OBJ = 0.1
     CLUSTER_BY = 'subj_obj'
 
-    PATH_TO_WORKING_FOLDER = cwd + '' # Put here the folder where the triplets are stored, the embeddings and clusters will be stored here as well
-    PATH_TO_FILES_FOR_COUNTS = cwd + '' # Put here the folder with the files for the word counts, these files should be from different categories than the target categories
+    PATH_TO_WORKING_FOLDER = cwd.joinpath('') # Put here the folder where the triplets are stored, the embeddings and clusters will be stored here as well
+    PATH_TO_FILES_FOR_COUNTS = cwd.joinpath('')  # Put here the folder with the files for the word counts, these files should be from different categories than the target categories
+    PATH_LOG = cwd.joinpath('') # Put here the path to the log folder
     #################################################################
 
-    PATH_TRIPLETS = PATH_TO_WORKING_FOLDER + '\processed_triplets.csv' # place where the triplets are stored
-    PATH_ARXIV_COUNTS = PATH_TO_WORKING_FOLDER + '\word_counts.pkl' # place where the word counts are stored
-    PATH_SUBJ_EMB = PATH_TO_WORKING_FOLDER + '\subjects_embeds.pkl' # place where the object embeddings are stored
-    PATH_OBJ_EMB = PATH_TO_WORKING_FOLDER + '\objects_embeds.pkl' # place where the subject embeddings are stored
-    PATH_VERB_EMBEDS = PATH_TO_WORKING_FOLDER + '\verbs_embeds.pkl' # place where the verb embeddings are stored
-    PATH_SAVE_CLUSTERS = PATH_TO_WORKING_FOLDER + '\clusters.pkl' # place where the clusters are stored
+    PATH_TRIPLETS = PATH_TO_WORKING_FOLDER.join('processed_triplets.csv')  # place where the triplets are stored
+    PATH_ARXIV_COUNTS = PATH_TO_WORKING_FOLDER.join('word_counts.pkl') # place where the word counts are stored
+    PATH_SUBJ_EMB = PATH_TO_WORKING_FOLDER.join('subjects_embeds.pkl') # place where the object embeddings are stored
+    PATH_OBJ_EMB = PATH_TO_WORKING_FOLDER.join('objects_embeds.pkl') # place where the subject embeddings are stored
+    PATH_VERB_EMBEDS = PATH_TO_WORKING_FOLDER.join('verbs_embeds.pkl') # place where the verb embeddings are stored
+    PATH_SAVE_CLUSTERS = PATH_TO_WORKING_FOLDER.join('clusters.pkl') # place where the clusters are stored
+    
+    general_logger = get_logger(PATH_LOG.joinpath('general_logger_clustering.txt'))
 
     # check if the counts are already saved
-    if not os.path.exists(PATH_ARXIV_COUNTS):
+    if not PATH_ARXIV_COUNTS.exists():
         # get the counts
         counts = get_counts(PATH_TO_FILES_FOR_COUNTS)
         # save the counts
@@ -606,9 +610,9 @@ def main():
     # Get the subjects and objects, and get all the triplets
     subjects,  verbs, objects = get_subjverbobj(df)
     triplets = get_triplets_list(df)
-
+    
     # Get the embeddings, then filter to only include the ones in the triplets
-    subjects_embeds, objects_embeds, verb_embeds = load_embeds(PATH_SUBJ_EMB, PATH_OBJ_EMB, PATH_VERB_EMBEDS, subjects, objects, verbs)
+    subjects_embeds, objects_embeds, verb_embeds = load_embeds(PATH_SUBJ_EMB, PATH_OBJ_EMB, PATH_VERB_EMBEDS, subjects, objects, verbs, general_logger)
 
     # Cluster the embeddings
     Z_sub, Z_obj, subjects, objects = make_clusters_scibert(subjects_embeds, objects_embeds, subset=1)
@@ -623,11 +627,11 @@ def main():
 
     # Cluster the triplets based on the setting
     if CLUSTER_BY == 'subj_obj':
-        clustered_triplets = get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects)
+        clustered_triplets = get_clustered_triplets(triplets, clusters_sub, clusters_obj, subjects, objects, general_logger)
     if CLUSTER_BY == 'subj':
-        clustered_triplets= cluster_based_on_subj(triplets, clusters_sub_dict)
+        clustered_triplets= cluster_based_on_subj(triplets, clusters_sub_dict, general_logger)
     if CLUSTER_BY == 'obj':
-        clustered_triplets = cluster_based_on_obj(triplets, clusters_obj_dict)
+        clustered_triplets = cluster_based_on_obj(triplets, clusters_obj_dict, general_logger)
 
     # Save the clusters
     with open(PATH_SAVE_CLUSTERS, 'wb') as f:

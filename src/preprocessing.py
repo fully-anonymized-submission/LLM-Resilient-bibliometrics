@@ -1,5 +1,5 @@
-from helpers import write_log
-import os
+from helpers import get_logger, write_log
+from pathlib import Path
 
 from fastcoref import spacy_component
 from abbreviations import schwartz_hearst
@@ -11,7 +11,6 @@ import spacy
 from spacy.tokens import Doc
 
 spacy.prefer_gpu() 
-print('Device being used for spacy: ', spacy.prefer_gpu(), flush=True)
 
 # Load spacy pipeline
 nlp = spacy.load('en_core_web_lg', exclude=['parser', 'ner', 'lemmatizer', 'textcat'])
@@ -22,7 +21,7 @@ def get_text_files_in_dir(path):
     """ Get all the .txt files in a directory
     
     Parameters:
-        path (str): path to the directory
+        path (Path): path to the directory
         
         Return:
         texts (list[str]): list of texts
@@ -30,15 +29,15 @@ def get_text_files_in_dir(path):
     """
     texts = []
     text_file_names = []
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            if file.endswith(".txt"):
-                text_file_names.append(file)
-                with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
-                    texts.append(f.read())
+
+    #iterate over txt files with Path.glob()
+    for file in path.rglob('*.txt'):
+        text_file_names.append(file.name)
+        with open(file, 'r', encoding='utf-8') as f:
+            texts.append(f.read())
     return texts, text_file_names
 
-def remove_citations(texts, log_file):
+def remove_citations(texts, logger_citations):
     """Remove citations through a rule based heuristic
 
     Parameters:
@@ -64,7 +63,8 @@ def remove_citations(texts, log_file):
                 for match in re.finditer(re_expression, line):
                     start_pos.append(match.start())
                     end_pos.append(match.end())
-                write_log(line, new_line, line_count, start_pos, end_pos, 'Removing citations', log_file)
+                
+                write_log(line, new_line, line_count, start_pos, end_pos, 'Removing citations', logger_citations)
             else:
                 new_line = line
             line_count += 1
@@ -72,7 +72,7 @@ def remove_citations(texts, log_file):
         new_texts.append(new_text)
     return new_texts
 
-def expand_abbreviations(texts, log_file):
+def expand_abbreviations(texts, logger_abbr):
     """Expand the abbreviations using the Schwartz-Hearst algorithm
 
     Parameters:
@@ -143,13 +143,11 @@ def expand_abbreviations(texts, log_file):
                 end_pos.append(replacement[0][1])
             new_sentences.append(sentence)
             if (len(replacements_to_keep) > 0):
-                write_log(old_sentence, sentence, i, start_pos, end_pos, 'Abbreviation replacement', log_file)
+                write_log(old_sentence, sentence, i, start_pos, end_pos, 'Abbreviation replacement', logger_abbr)
         # Get new_text by joining the sentences
         new_text = '\n'.join(new_sentences)
         new_texts.append(new_text)
-    # print the abbreviations that caused errors
-    print('Errors with abbreviations: ', errors_with_abbreviations)
-    return new_texts, pairs
+    return new_texts, errors_with_abbreviations
 
 def get_span_noun_indices(doc, cluster):
     """Get the indices of the spans that contain a noun
@@ -204,7 +202,7 @@ def get_cluster_head(doc: Doc, cluster, noun_indices):
     head_span = doc.text[head_start:head_end+1]
     return head_span, (head_start, head_end)
 
-def replace_corefs(doc, PATH_LOG, clusters):
+def replace_corefs(doc, logger_coref, clusters):
     """Replace the coreferences in the text
 
     Parameters:
@@ -275,13 +273,13 @@ def replace_corefs(doc, PATH_LOG, clusters):
                 if mention_span[-1] != ' ':
                     mention_span = mention_span + ' '
         except:
-            print('Error with end_positions: ', end_positions[idx], len(new_text))
+            pass
 
         new_text = new_text[:start_positions[idx]] + mention_span + new_text[end_positions[idx]+1:]
         new_sentence = sentence[:start_pos_in_sentence] + mention_span + sentence[end_pos_in_sentence+1:]
 
         # write log
-        write_log(sentence, new_sentence, 'Unknown', [start_pos_in_sentence], [end_pos_in_sentence], 'Coreference resolution', PATH_LOG)
+        write_log(sentence, new_sentence, 'Unknown', [start_pos_in_sentence], [end_pos_in_sentence], 'Coreference resolution', logger_coref)
         # Adapt the positions of the corefs, go over range idx until end
         for i in range(idx, len(all_replacements)):
             if start_positions[i] > start_positions[idx] and end_positions[i] > end_positions[idx]:
@@ -291,7 +289,7 @@ def replace_corefs(doc, PATH_LOG, clusters):
                 
     return new_text
 
-def coreference_resolution(texts, PATH_LOG, batch_size=50000):
+def coreference_resolution(texts, logger_coref, batch_size=50000):
     """Resolve the coreferences in the texts using the fastcoref library
 
     Parameters:
@@ -316,21 +314,21 @@ def coreference_resolution(texts, PATH_LOG, batch_size=50000):
                 split_pos = text[:50000].rfind('\n')
                 doc = nlp(text[:split_pos])
                 clusters = doc._.coref_clusters
-                new_text += replace_corefs(nlp(text[:split_pos]), PATH_LOG, clusters)
+                new_text += replace_corefs(nlp(text[:split_pos]), logger_coref, clusters)
                 text = text[split_pos:]
             doc = nlp(text)
             clusters = doc._.coref_clusters
-            new_text += replace_corefs(doc, PATH_LOG, clusters)
+            new_text += replace_corefs(doc, logger_coref, clusters)
             new_sentences = new_text
         else:
             doc = nlp(text)
             clusters = doc._.coref_clusters
-            new_sentences = replace_corefs(doc, PATH_LOG, clusters)
+            new_sentences = replace_corefs(doc, logger_coref, clusters)
     new_texts.append(new_sentences)
 
     return new_texts
 
-def fix_line_breaks(texts, PATH_LOG):
+def fix_line_breaks(texts, logger):
     """Fix line breaks in the texts
 
     Parameters:
@@ -351,7 +349,7 @@ def fix_line_breaks(texts, PATH_LOG):
             new_line = re.sub(r'(\w)-\s+(\w)', r'\1\2', line)
             # write log
             if len(start_positions) > 0:
-                write_log(line, new_line, idx, start_positions, end_positions, 'Fixing line breaks', PATH_LOG)
+                write_log(line, new_line, idx, start_positions, end_positions, 'Fixing line breaks', logger)
             new_text += new_line + '\n'
         new_texts.append(new_text)
     return new_texts
@@ -362,63 +360,71 @@ def main():
     use_coref_resolution = False # whether to use coreference resolution
 
     # please run from the root directory of the project
-    PATH_ROOT = os.getcwd()
-    print('Current working directory: ', PATH_ROOT)
-
+    PATH_ROOT = Path.cwd()
     ####################################### FILL IN THE PATHS ########################################
-    PATH_SAVE_TEXT = PATH_ROOT + '' # path to the directory to save the processed text
-    PATH_LOG = PATH_ROOT + '' # path to the log directory
+    PATH_LOAD_TEXT = PATH_ROOT.joinpath('')
+    PATH_SAVE_TEXT = PATH_ROOT.joinpath('') # path to the directory to save the processed text
+    PATH_LOG = PATH_ROOT.joinpath('') # path to the log directory
     ##################################################################################################
+    
+
+    logger_general_output = get_logger('preprocessing_output', PATH_LOG + 'general_output_preprocessing.txt')
+    logger_general_output.info('Current working directory: ' + PATH_ROOT)
 
     # check if folders exist, otherwise create them
-    if not os.path.exists(PATH_LOG):
-        print('Creating log folder...')
-        os.makedirs(PATH_LOG)
+    if not PATH_LOG.exists():
+        logger_general_output.info('Creating log folder...')
+        Path.mkdir(PATH_LOG)
 
-    if not os.path.exists(PATH_SAVE_TEXT):
-        print('Creating folder to save texts... ')
-        os.makedirs(PATH_SAVE_TEXT)
+    if not PATH_SAVE_TEXT.exists():
+        logger_general_output.info('Creating folder to save texts... ')
+        Path.mkdir(PATH_SAVE_TEXT)
 
-    PATH_LOG_CITATIONS = PATH_LOG + 'log_citations.txt'
-    PATH_LOG_ABBREVIATIONS = PATH_LOG + 'log_abbreviations.txt'
-    PATH_LOG_COREFERENCE = PATH_LOG + 'log_coreference.txt'
-    PATH_LOG_LINE_BREAKS = PATH_LOG + 'log_line_breaks.txt'
-    # Clear the log files
-    open(PATH_LOG_CITATIONS, 'w').close()
-    open(PATH_LOG_ABBREVIATIONS, 'w').close()
-    open(PATH_LOG_COREFERENCE, 'w').close()
-    open(PATH_LOG_LINE_BREAKS, 'w').close()
-    
-    texts, text_file_names = get_text_files_in_dir(PATH_SAVE_TEXT)
+    PATH_LOG_CITATIONS = PATH_LOG.joinpath('log_citations.txt')
+    PATH_LOG_ABBREVIATIONS = PATH_LOG.joinpath('log_abbreviations.txt')
+    PATH_LOG_COREFERENCE = PATH_LOG.joinpath('log_coreference.txt')
+    PATH_LOG_LINE_BREAKS = PATH_LOG.joinpath('log_line_breaks.txt')
+    # create the loggers using the logging module
+    logger_citations = get_logger('citations', PATH_LOG_CITATIONS)
+    logger_abbreviations = get_logger('abbreviations', PATH_LOG_ABBREVIATIONS)
+    logger_coreference = get_logger('coreference', PATH_LOG_COREFERENCE)
+    logger_line_breaks = get_logger('line_breaks', PATH_LOG_LINE_BREAKS)
+
+
+    texts, text_file_names = get_text_files_in_dir(PATH_LOAD_TEXT)
 
     # ------------------- FIX LINE BREAKS -------------------
-    print('Fixing line breaks...', flush=True)
-    texts = fix_line_breaks(texts, PATH_LOG_LINE_BREAKS)
+
+    logger_general_output.info('Fixing line breaks...')
+    texts = fix_line_breaks(texts, logger_line_breaks)
 
     # ------------------- REMOVE CITATIONS -------------------
-    print('Removing citations...', flush=True)
-    texts = remove_citations(texts, PATH_LOG_CITATIONS)
+    logger_general_output.info('Removing citations...')
+    texts = remove_citations(texts, logger_citations)
 
     # ------------------- EXPAND ABBREVIATIONS -------------------
-    print('Expanding abbreviations...', flush=True)
-    texts, abbreviations = expand_abbreviations(texts, PATH_LOG_ABBREVIATIONS)
+    logger_general_output.info('Expanding abbreviations...')
+    texts, errors_with_abbreviations = expand_abbreviations(texts, logger_abbreviations)
+    if len(errors_with_abbreviations) > 0:
+        logger_general_output.info('Errors with the following abbreviations: ' + str(errors_with_abbreviations))
 
     # ------------------- COREFERENCE RESOLUTION -------------------
  
     if use_coref_resolution:
         # record start time
         start_time = time.time()
-        print('Resolving coreferences...', flush=True)
-        texts = coreference_resolution(texts, PATH_LOG_COREFERENCE)
+        logger_general_output.info('Resolving coreferences...')
+        texts = coreference_resolution(texts, logger_coreference)
         # record end time
         end_time = time.time()
-        print('Time for coreference resolution: ', end_time - start_time, ' seconds', flush=True)
+        logger_general_output.info('Time for coreference resolution: ' + str(end_time - start_time) + ' seconds')
     # ------------------- SAVE TEXT -------------------
-    print('Saving text...', flush=True)
+    logger_general_output.info('Saving text...')
     for i, text in enumerate(texts):
-        with open(os.path.join(PATH_SAVE_TEXT, text_file_names[i]), "w", encoding="utf-8") as f:
+        new_path = Path.joinpath(PATH_SAVE_TEXT, text_file_names[i])
+        with open(new_path, 'w', encoding='utf-8') as f:
             f.write(text)
-    print('Done!')
+    logger_general_output.info('Done!')
 
 
 if __name__ == "__main__":
